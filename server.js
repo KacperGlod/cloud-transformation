@@ -19,6 +19,7 @@ const CONVERTER_EXE = path.join(CONVERTER_DIR, "PotreeConverter.exe");
 const LASZIP_DLL = path.join(CONVERTER_DIR, "laszip.dll");
 const SEGMENTER_SCRIPT = path.join(ROOT_DIR, "tools", "segment_pointcloud.py");
 const TRANSFORMER_SCRIPT = path.join(ROOT_DIR, "tools", "transform_pointcloud.py");
+const POINT_REMOVER_SCRIPT = path.join(ROOT_DIR, "tools", "remove_points.py");
 const PYTHON_COMMAND = process.env.PYTHON || "python";
 const HOST = process.env.HOST || "::1";
 const PORT = Number(process.env.PORT || 1234);
@@ -119,6 +120,8 @@ function publicJob(job) {
 		selection: job.selection || null,
 		transformation: job.transformation || null,
 		transformationResult: job.transformationResult || null,
+		removalSelections: job.removalSelections || null,
+		removalResult: job.removalResult || null,
 		error: job.error,
 		log: job.log,
 		createdAt: job.createdAt,
@@ -323,6 +326,74 @@ async function runTransformation(job) {
 	}
 }
 
+async function runPointRemoval(job) {
+	job.status = "removing";
+	job.progress = 0;
+	job.updatedAt = new Date().toISOString();
+	let completeOutput = "";
+
+	await new Promise((resolve, reject) => {
+		const remover = spawn(
+			PYTHON_COMMAND,
+			[
+				POINT_REMOVER_SCRIPT,
+				"--input", job.sourcePath,
+				"--output", job.inputPath,
+				"--laszip", LASZIP_DLL,
+				"--selections", JSON.stringify(job.removalSelections),
+			],
+			{
+				cwd: ROOT_DIR,
+				shell: false,
+				windowsHide: true,
+			}
+		);
+
+		activeConverter = remover;
+		const onOutput = chunk => {
+			appendJobLog(job, chunk);
+			completeOutput = `${completeOutput}${chunk.toString("utf8")}`.slice(-200_000);
+		};
+
+		remover.stdout.on("data", onOutput);
+		remover.stderr.on("data", onOutput);
+		remover.once("error", error => {
+			activeConverter = null;
+			if (error.code === "ENOENT") {
+				reject(new Error(`Nie znaleziono interpretera Python (${PYTHON_COMMAND}).`));
+			} else {
+				reject(error);
+			}
+		});
+		remover.once("close", code => {
+			activeConverter = null;
+			if (code === 0) {
+				resolve();
+			} else {
+				const errorLines = [...completeOutput.matchAll(/^BŁĄD USUWANIA PUNKTÓW:\s*(.+)$/gm)];
+				const message = errorLines.at(-1)?.[1]
+					|| `Usuwanie punktów zakończyło pracę z kodem ${code}. Sprawdź szczegóły zadania.`;
+				reject(new Error(message));
+			}
+		});
+	});
+
+	const resultLines = [...completeOutput.matchAll(/^POINT_REMOVAL_RESULT\s+(.+)$/gm)];
+	if (resultLines.length === 0) {
+		throw new Error("Usuwanie punktów nie zwróciło informacji o pliku wynikowym.");
+	}
+
+	try {
+		job.removalResult = JSON.parse(resultLines.at(-1)[1]);
+	} catch {
+		throw new Error("Usuwanie punktów zwróciło nieprawidłowe podsumowanie.");
+	}
+
+	if (!fs.existsSync(job.inputPath)) {
+		throw new Error("Usuwanie punktów nie utworzyło wynikowego pliku LAZ.");
+	}
+}
+
 async function writeCloudInfo(job) {
 	const info = {
 		schemaVersion: 1,
@@ -347,10 +418,17 @@ async function writeCloudInfo(job) {
 					...job.transformation,
 					result: job.transformationResult,
 				}
-				: {
-					type: "import",
-					originalFilename: job.filename,
-				},
+				: job.kind === "point-removal"
+					? {
+						type: "point-removal",
+						selectionShape: "sphere",
+						selections: job.removalSelections,
+						statistics: job.removalResult,
+					}
+					: {
+						type: "import",
+						originalFilename: job.filename,
+					},
 	};
 
 	await fsp.writeFile(
@@ -384,6 +462,9 @@ async function startNextConversion() {
 		} else if (job.kind === "transformation") {
 			await runTransformation(job);
 			job.progress = 0;
+		} else if (job.kind === "point-removal") {
+			await runPointRemoval(job);
+			job.progress = 0;
 		}
 
 		job.status = "converting";
@@ -416,6 +497,9 @@ async function startNextConversion() {
 					`Rotation XYZ [deg]: ${JSON.stringify(job.transformation.rotationDegrees)}`,
 					`Scale XYZ: ${JSON.stringify(job.transformation.scale)}`,
 					`Pivot: ${job.transformation.pivotMode} ${JSON.stringify(job.transformation.pivot)}`,
+				] : []),
+				...(job.kind === "point-removal" ? [
+					`Spherical selections: ${job.removalSelections.length}`,
 				] : []),
 				`Started: ${new Date().toISOString()}`,
 				`Command: PotreeConverter.exe <source> -o <output> -m poisson`,
@@ -470,6 +554,12 @@ async function startNextConversion() {
 		} else if (job.kind === "transformation") {
 			await fsp.writeFile(
 				path.join(job.outputDir, "transformation.log"),
+				`${job.log}\n`,
+				"utf8"
+			);
+		} else if (job.kind === "point-removal") {
+			await fsp.writeFile(
+				path.join(job.outputDir, "point-removal.log"),
 				`${job.log}\n`,
 				"utf8"
 			);
@@ -643,6 +733,27 @@ function normalizedVector(value, length, label) {
 		throw new Error(`${label} zawiera nieprawidłowe wartości.`);
 	}
 	return vector;
+}
+
+function normalizedRemovalSelections(value) {
+	if (!Array.isArray(value) || value.length === 0) {
+		throw new Error("Dodaj co najmniej jedno zaznaczenie punktów.");
+	}
+	if (value.length > 500) {
+		throw new Error("Jedna operacja może zawierać najwyżej 500 zaznaczeń.");
+	}
+
+	return value.map((selection, index) => {
+		if (!selection || typeof selection !== "object") {
+			throw new Error(`Zaznaczenie ${index + 1} ma nieprawidłowy format.`);
+		}
+		const position = normalizedVector(selection.position, 3, `Pozycja zaznaczenia ${index + 1}`);
+		const radius = Number(selection.radius);
+		if (!Number.isFinite(radius) || radius <= 0 || radius > 1_000_000_000) {
+			throw new Error(`Promień zaznaczenia ${index + 1} musi być większy od zera.`);
+		}
+		return { position, radius };
+	});
 }
 
 async function handleSegmentation(request, response) {
@@ -862,6 +973,96 @@ async function handleTransformation(request, response) {
 	}
 }
 
+async function handlePointRemoval(request, response) {
+	if (!fs.existsSync(CONVERTER_EXE) || !fs.existsSync(LASZIP_DLL) || !fs.existsSync(POINT_REMOVER_SCRIPT)) {
+		sendJson(response, 503, { error: "Lokalny silnik usuwania punktów nie jest kompletny." });
+		return;
+	}
+
+	let body;
+	try {
+		body = await readJsonBody(request);
+	} catch (error) {
+		sendJson(response, 400, { error: error.message });
+		return;
+	}
+
+	try {
+		const requestedName = String(body.name || "").trim();
+		const slug = slugify(requestedName);
+		if (!slug) {
+			throw new Error("Podaj prawidłową nazwę chmury wynikowej.");
+		}
+
+		const sourceCloud = String(body.sourceCloud || "");
+		if (!sourceCloud || path.basename(sourceCloud) !== sourceCloud || [".", ".."].includes(sourceCloud)) {
+			throw new Error("Nieprawidłowa chmura źródłowa.");
+		}
+		const removalSelections = normalizedRemovalSelections(body.selections);
+
+		const outputDir = path.join(POINTCLOUDS_DIR, slug);
+		if (!isPathInside(POINTCLOUDS_DIR, outputDir)) {
+			throw new Error("Nieprawidłowa nazwa chmury wynikowej.");
+		}
+		if (reservedCloudNames.has(slug) || fs.existsSync(outputDir)) {
+			sendJson(response, 409, { error: `Chmura o nazwie "${slug}" już istnieje.` });
+			return;
+		}
+
+		const sourceDir = path.join(POINTCLOUDS_DIR, sourceCloud);
+		if (!isPathInside(POINTCLOUDS_DIR, sourceDir)) {
+			throw new Error("Nieprawidłowa chmura źródłowa.");
+		}
+		const sourceStat = await fsp.stat(sourceDir).catch(() => null);
+		if (!sourceStat?.isDirectory()) {
+			throw new Error("Nie znaleziono katalogu chmury źródłowej.");
+		}
+
+		const sourceInfo = await readCloudInfo(sourceDir);
+		const sourcePath = await findSourceFile(sourceDir, sourceInfo);
+		if (!sourcePath) {
+			throw new Error("Chmura źródłowa nie ma zachowanego oryginalnego pliku LAS/LAZ.");
+		}
+
+		const id = crypto.randomUUID();
+		const workDir = path.join(JOBS_DIR, id);
+		const filename = `${slug}.laz`;
+		const inputPath = path.join(workDir, filename);
+		const now = new Date().toISOString();
+		const job = {
+			id,
+			kind: "point-removal",
+			name: requestedName.slice(0, 120),
+			slug,
+			filename,
+			status: "queued",
+			uploadProgress: null,
+			progress: 0,
+			pointCloudUrl: null,
+			error: null,
+			log: "",
+			createdAt: now,
+			updatedAt: now,
+			workDir,
+			inputPath,
+			outputDir,
+			sourceCloud,
+			sourcePath,
+			removalSelections,
+			removalResult: null,
+		};
+
+		await fsp.mkdir(workDir, { recursive: true });
+		jobs.set(id, job);
+		reservedCloudNames.add(slug);
+		conversionQueue.push(id);
+		sendJson(response, 202, publicJob(job));
+		setImmediate(startNextConversion);
+	} catch (error) {
+		sendJson(response, 400, { error: error.message });
+	}
+}
+
 async function handleApi(request, response, url) {
 	if (request.method === "GET" && url.pathname === "/api/health") {
 		const clouds = await listPointClouds();
@@ -870,6 +1071,7 @@ async function handleApi(request, response, url) {
 			converterAvailable: fs.existsSync(CONVERTER_EXE),
 			segmentationAvailable: fs.existsSync(LASZIP_DLL) && fs.existsSync(SEGMENTER_SCRIPT),
 			transformationAvailable: fs.existsSync(LASZIP_DLL) && fs.existsSync(TRANSFORMER_SCRIPT),
+			pointRemovalAvailable: fs.existsSync(LASZIP_DLL) && fs.existsSync(POINT_REMOVER_SCRIPT),
 			activeJobId,
 			queuedJobs: conversionQueue.length,
 			cloudCount: clouds.length,
@@ -894,6 +1096,11 @@ async function handleApi(request, response, url) {
 
 	if (request.method === "POST" && url.pathname === "/api/transformations") {
 		await handleTransformation(request, response);
+		return true;
+	}
+
+	if (request.method === "POST" && url.pathname === "/api/point-removals") {
+		await handlePointRemoval(request, response);
 		return true;
 	}
 
@@ -1043,12 +1250,16 @@ async function start() {
 	if (!fs.existsSync(LASZIP_DLL) || !fs.existsSync(TRANSFORMER_SCRIPT)) {
 		console.warn("UWAGA: lokalny silnik transformacji jest niedostępny.");
 	}
+	if (!fs.existsSync(LASZIP_DLL) || !fs.existsSync(POINT_REMOVER_SCRIPT)) {
+		console.warn("UWAGA: lokalny silnik usuwania punktów jest niedostępny.");
+	}
 
 	server.listen(PORT, HOST, () => {
 		console.log(`Cloud Transformation: http://localhost:${PORT}`);
 		console.log(`PotreeConverter: ${fs.existsSync(CONVERTER_EXE) ? "gotowy" : "niedostępny"}`);
 		console.log(`Segmentacja LAS/LAZ: ${fs.existsSync(LASZIP_DLL) && fs.existsSync(SEGMENTER_SCRIPT) ? "gotowa" : "niedostępna"}`);
 		console.log(`Transformacje LAS/LAZ: ${fs.existsSync(LASZIP_DLL) && fs.existsSync(TRANSFORMER_SCRIPT) ? "gotowe" : "niedostępne"}`);
+		console.log(`Usuwanie punktów LAS/LAZ: ${fs.existsSync(LASZIP_DLL) && fs.existsSync(POINT_REMOVER_SCRIPT) ? "gotowe" : "niedostępne"}`);
 	});
 }
 

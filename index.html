@@ -208,7 +208,8 @@
 
 		#import_progress,
 		#segment_progress,
-		#transform_progress {
+		#transform_progress,
+		#point_removal_progress {
 			width: 100%;
 			height: 0.7rem;
 			margin-top: 0.8rem;
@@ -217,7 +218,8 @@
 
 		#import_status,
 		#segment_status,
-		#transform_status {
+		#transform_status,
+		#point_removal_status {
 			min-height: 1.2rem;
 			margin: 0.5rem 0 0;
 			color: #cbd7e2;
@@ -227,13 +229,15 @@
 
 		#import_status[data-kind="error"],
 		#segment_status[data-kind="error"],
-		#transform_status[data-kind="error"] {
+		#transform_status[data-kind="error"],
+		#point_removal_status[data-kind="error"] {
 			color: #ff9d9d;
 		}
 
 		#import_log,
 		#segment_log,
-		#transform_log {
+		#transform_log,
+		#point_removal_log {
 			max-height: 9rem;
 			overflow: auto;
 			margin: 0.55rem 0 0;
@@ -292,6 +296,31 @@
 			text-align: right;
 		}
 
+		#point_removal_hint {
+			position: fixed;
+			bottom: 1.2rem;
+			left: 50%;
+			z-index: 1150;
+			max-width: calc(100% - 2rem);
+			padding: 0.7rem 1rem;
+			border: 1px solid rgba(255, 105, 105, 0.7);
+			border-radius: 0.55rem;
+			background: rgba(78, 19, 22, 0.94);
+			box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.35);
+			color: #fff;
+			font-size: 0.86rem;
+			text-align: center;
+			transform: translateX(-50%);
+		}
+
+		#point_removal_hint[hidden] {
+			display: none;
+		}
+
+		body.point-removal-picking #potree_render_area canvas {
+			cursor: crosshair !important;
+		}
+
 		@media (max-width: 640px) {
 			#import_toggle {
 				top: 0.65rem;
@@ -323,6 +352,9 @@
 	<script src="./libs/plasio/js/laslaz.js"></script>
 
 	<div id="viewer_status">Wczytywanie chmury punktów…</div>
+	<div id="point_removal_hint" role="status" hidden>
+		Kliknij niepasujący punkt. Przeciąganie nadal obraca widok. Naciśnij Esc, aby zakończyć wybieranie.
+	</div>
 
 	<button id="import_toggle" type="button" aria-controls="import_panel" aria-expanded="false">
 		Chmury i przetwarzanie
@@ -410,6 +442,46 @@
 
 		<hr class="panel-divider">
 
+		<form id="point_removal_form">
+			<div class="section-label">Usuń punkty z sąsiedztwem</div>
+			<p id="point_removal_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
+
+			<div class="form-group">
+				<label for="point_removal_radius">Promień sąsiedztwa</label>
+				<input id="point_removal_radius" type="number" value="0.5" min="0.000000001" step="any" required>
+				<p class="helper-text">Promień jest podawany w jednostkach układu współrzędnych chmury.</p>
+			</div>
+
+			<button id="point_removal_pick" class="secondary-button" type="button" style="width: 100%; margin-top: 0.75rem;">
+				Wybierz punkty w widoku
+			</button>
+
+			<p id="point_removal_count" class="source-summary">Brak zaznaczeń.</p>
+			<div class="actions">
+				<button id="point_removal_undo" class="secondary-button" type="button" disabled>Cofnij ostatnie</button>
+				<button id="point_removal_clear" class="secondary-button" type="button" disabled>Wyczyść</button>
+			</div>
+
+			<div class="form-group">
+				<label for="point_removal_name">Nazwa wynikowej chmury i pliku LAZ</label>
+				<input id="point_removal_name" name="pointRemovalName" type="text" maxlength="120" required>
+			</div>
+
+			<button id="point_removal_button" class="primary-button" type="submit" style="width: 100%; margin-top: 0.85rem;">
+				Usuń zaznaczone i przekonwertuj
+			</button>
+
+			<progress id="point_removal_progress" max="100" value="0"></progress>
+			<p id="point_removal_status" role="status">Wybierz punkt lub kilka punktów w widoku.</p>
+			<p class="helper-text">Czerwone kule pokazują obszary, które zostaną usunięte. Oryginał pozostanie bez zmian.</p>
+			<details id="point_removal_log_details" hidden>
+				<summary>Szczegóły usuwania i konwersji</summary>
+				<pre id="point_removal_log"></pre>
+			</details>
+		</form>
+
+		<hr class="panel-divider">
+
 		<form id="transform_form">
 			<div class="section-label">Transformuj chmurę</div>
 			<p id="transform_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
@@ -488,6 +560,8 @@
 	</div>
 
 	<script type="module">
+		import * as THREE from "./libs/three.js/build/three.module.js";
+
 		const DEFAULT_POINT_CLOUD = {
 			name: "vol_total",
 			url: "./pointclouds/vol_total/cloud.js",
@@ -529,16 +603,49 @@
 		const transformLogDetails = document.getElementById("transform_log_details");
 		const pivotMode = document.getElementById("pivot_mode");
 		const customPivotGroup = document.getElementById("custom_pivot_group");
+		const pointRemovalForm = document.getElementById("point_removal_form");
+		const pointRemovalSource = document.getElementById("point_removal_source");
+		const pointRemovalRadius = document.getElementById("point_removal_radius");
+		const pointRemovalPick = document.getElementById("point_removal_pick");
+		const pointRemovalCount = document.getElementById("point_removal_count");
+		const pointRemovalUndo = document.getElementById("point_removal_undo");
+		const pointRemovalClear = document.getElementById("point_removal_clear");
+		const pointRemovalName = document.getElementById("point_removal_name");
+		const pointRemovalButton = document.getElementById("point_removal_button");
+		const pointRemovalProgress = document.getElementById("point_removal_progress");
+		const pointRemovalStatus = document.getElementById("point_removal_status");
+		const pointRemovalLog = document.getElementById("point_removal_log");
+		const pointRemovalLogDetails = document.getElementById("point_removal_log_details");
+		const pointRemovalHint = document.getElementById("point_removal_hint");
 		const renderArea = document.getElementById("potree_render_area");
 
 		const viewer = new Potree.Viewer(renderArea);
 		const loadedPointClouds = new Map();
+		const pointRemovalMarkerGeometry = new THREE.SphereGeometry(1, 24, 16);
+		const pointRemovalMarkerFill = new THREE.MeshBasicMaterial({
+			color: 0xff3038,
+			transparent: true,
+			opacity: 0.16,
+			depthWrite: false,
+			side: THREE.DoubleSide,
+		});
+		const pointRemovalMarkerWire = new THREE.MeshBasicMaterial({
+			color: 0xff6469,
+			transparent: true,
+			opacity: 0.85,
+			depthWrite: false,
+			wireframe: true,
+		});
 		let activePointCloud = null;
 		let activeCloud = null;
 		let availableClouds = [];
 		let clippingBoxes = [];
 		let segmentationEngineAvailable = true;
 		let transformationEngineAvailable = true;
+		let pointRemovalEngineAvailable = true;
+		let pointRemovalSelections = [];
+		let pointRemovalPicking = false;
+		let pointRemovalMouseDown = null;
 		window.viewer = viewer;
 
 		viewer.setEDLEnabled(true);
@@ -576,6 +683,11 @@
 		function setTransformStatus(message, kind = "info") {
 			transformStatus.textContent = message;
 			transformStatus.dataset.kind = kind;
+		}
+
+		function setPointRemovalStatus(message, kind = "info") {
+			pointRemovalStatus.textContent = message;
+			pointRemovalStatus.dataset.kind = kind;
 		}
 
 		function refreshClippingBoxes() {
@@ -642,6 +754,32 @@
 					setTransformStatus("Wpisz parametry i nazwę nowej chmury.");
 				}
 			}
+
+			updatePointRemovalControls();
+		}
+
+		function updatePointRemovalControls() {
+			const hasSource = Boolean(activeCloud?.sourceAvailable);
+			const hasSelections = pointRemovalSelections.length > 0;
+			pointRemovalPick.disabled = !pointRemovalEngineAvailable || !hasSource;
+			pointRemovalUndo.disabled = !hasSelections;
+			pointRemovalClear.disabled = !hasSelections;
+			pointRemovalButton.disabled = !pointRemovalEngineAvailable || !hasSource || !hasSelections;
+			pointRemovalCount.textContent = hasSelections
+				? `Zaznaczone obszary: ${pointRemovalSelections.length}.`
+				: "Brak zaznaczeń.";
+
+			if (!pointRemovalEngineAvailable) {
+				pointRemovalSource.textContent = "Lokalny silnik usuwania punktów jest niedostępny.";
+				setPointRemovalStatus("Sprawdź plik tools/remove_points.py i bibliotekę LASzip.", "error");
+			} else if (!activeCloud) {
+				pointRemovalSource.textContent = "Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.";
+			} else if (!hasSource) {
+				pointRemovalSource.textContent = `Chmura „${activeCloud.name}” nie ma oryginalnego pliku LAS/LAZ.`;
+				setPointRemovalStatus("Usuwanie punktów wymaga zachowanego pliku źródłowego.", "error");
+			} else {
+				pointRemovalSource.textContent = `Źródło: ${activeCloud.name} (${activeCloud.sourceFile})`;
+			}
 		}
 
 		function setPanelOpen(open) {
@@ -650,12 +788,109 @@
 			importToggle.setAttribute("aria-expanded", String(open));
 		}
 
+		function pointRemovalRadiusValue() {
+			const radius = Number(pointRemovalRadius.value);
+			if (!Number.isFinite(radius) || radius <= 0) {
+				throw new Error("Promień sąsiedztwa musi być większy od zera.");
+			}
+			return radius;
+		}
+
+		function sourceToWorldMatrix() {
+			if (!activePointCloud) {
+				throw new Error("Wczytaj chmurę źródłową.");
+			}
+			activePointCloud.updateMatrixWorld(true);
+			const offset = activePointCloud.pcoGeometry?.offset || { x: 0, y: 0, z: 0 };
+			const removeOffset = new THREE.Matrix4().makeTranslation(-offset.x, -offset.y, -offset.z);
+			return activePointCloud.matrixWorld.clone().multiply(removeOffset);
+		}
+
+		function createPointRemovalMarker(position, radius) {
+			const group = new THREE.Group();
+			group.add(new THREE.Mesh(pointRemovalMarkerGeometry, pointRemovalMarkerFill));
+			group.add(new THREE.Mesh(pointRemovalMarkerGeometry, pointRemovalMarkerWire));
+			group.matrixAutoUpdate = false;
+			const markerTransform = sourceToWorldMatrix()
+				.multiply(new THREE.Matrix4().makeTranslation(position[0], position[1], position[2]))
+				.multiply(new THREE.Matrix4().makeScale(radius, radius, radius));
+			group.matrix.copy(markerTransform);
+			group.matrixWorldNeedsUpdate = true;
+			group.renderOrder = 1000;
+			viewer.scene.scene.add(group);
+			return group;
+		}
+
+		function clearPointRemovalSelections() {
+			for (const selection of pointRemovalSelections) {
+				viewer.scene.scene.remove(selection.marker);
+			}
+			pointRemovalSelections = [];
+			updatePointRemovalControls();
+		}
+
+		function undoPointRemovalSelection() {
+			const selection = pointRemovalSelections.pop();
+			if (selection) {
+				viewer.scene.scene.remove(selection.marker);
+			}
+			updatePointRemovalControls();
+		}
+
+		function setPointRemovalPicking(active) {
+			pointRemovalPicking = active;
+			document.body.classList.toggle("point-removal-picking", active);
+			pointRemovalHint.hidden = !active;
+			pointRemovalPick.textContent = active ? "Zakończ wybieranie" : "Wybierz punkty w widoku";
+			if (active) {
+				setPointRemovalStatus("Klikaj punkty do usunięcia. Każde kliknięcie używa aktualnego promienia.");
+			} else {
+				pointRemovalMouseDown = null;
+			}
+		}
+
+		function addPointRemovalSelection(mouse) {
+			if (!activePointCloud || !activeCloud?.sourceAvailable) {
+				throw new Error("Aktywna chmura nie ma zachowanego pliku LAS/LAZ.");
+			}
+			if (pointRemovalSelections.length >= 500) {
+				throw new Error("Jedna operacja może zawierać najwyżej 500 zaznaczeń.");
+			}
+
+			const intersection = Potree.Utils.getMousePointCloudIntersection(
+				mouse,
+				viewer.scene.getActiveCamera(),
+				viewer,
+				[activePointCloud],
+				{ pickClipped: true }
+			);
+			if (!intersection) {
+				throw new Error("Nie znaleziono punktu pod kursorem. Przybliż widok i spróbuj ponownie.");
+			}
+
+			const radius = pointRemovalRadiusValue();
+			const sourcePosition = intersection.location.clone().applyMatrix4(sourceToWorldMatrix().invert());
+			const position = [sourcePosition.x, sourcePosition.y, sourcePosition.z];
+			pointRemovalSelections.push({
+				position,
+				radius,
+				marker: createPointRemovalMarker(position, radius),
+			});
+			updatePointRemovalControls();
+			setPointRemovalStatus(`Dodano obszar ${pointRemovalSelections.length} o promieniu ${radius}.`);
+		}
+
 		function normalizeCloudUrl(url) {
 			return new URL(url, window.location.href).pathname;
 		}
 
 		async function loadPointCloud(url, name) {
 			const normalizedUrl = normalizeCloudUrl(url);
+			const previousUrl = activeCloud?.url ? normalizeCloudUrl(activeCloud.url) : null;
+			if (previousUrl && previousUrl !== normalizedUrl) {
+				setPointRemovalPicking(false);
+				clearPointRemovalSelections();
+			}
 			const cloudDescriptor = availableClouds.find(cloud => normalizeCloudUrl(cloud.url) === normalizedUrl)
 				|| { name, slug: name, url: normalizedUrl, sourceAvailable: false, sourceFile: null };
 			showViewerStatus(`Wczytywanie chmury "${name}"…`);
@@ -994,7 +1229,76 @@
 			customPivotGroup.hidden = pivotMode.value !== "custom";
 		}
 
-		importToggle.addEventListener("click", () => setPanelOpen(true));
+		function buildPointRemovalPayload(name) {
+			if (!activeCloud?.sourceAvailable) {
+				throw new Error("Aktywna chmura nie ma zachowanego pliku LAS/LAZ.");
+			}
+			if (pointRemovalSelections.length === 0) {
+				throw new Error("Wybierz co najmniej jeden punkt do usunięcia.");
+			}
+			return {
+				name,
+				sourceCloud: activeCloud.slug,
+				selections: pointRemovalSelections.map(selection => ({
+					position: selection.position,
+					radius: selection.radius,
+				})),
+			};
+		}
+
+		async function createPointRemoval(payload) {
+			const response = await fetch("/api/point-removals", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const result = await response.json().catch(() => ({}));
+			if (response.status !== 202) {
+				throw new Error(result.error || "Nie udało się rozpocząć usuwania punktów.");
+			}
+			return result;
+		}
+
+		async function waitForPointRemoval(jobId) {
+			while (true) {
+				const response = await fetch(`/api/conversions/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+				if (!response.ok) {
+					throw new Error("Nie udało się odczytać stanu usuwania punktów.");
+				}
+
+				const job = await response.json();
+				pointRemovalLog.textContent = job.log || "";
+				pointRemovalLogDetails.hidden = !job.log;
+
+				if (job.status === "queued") {
+					pointRemovalProgress.removeAttribute("value");
+					setPointRemovalStatus("Zadanie oczekuje w lokalnej kolejce…");
+				} else if (job.status === "removing") {
+					pointRemovalProgress.value = job.progress || 0;
+					setPointRemovalStatus(`Usuwanie punktów: ${Math.round(job.progress || 0)}%`);
+				} else if (job.status === "converting") {
+					if (job.progress > 0) {
+						pointRemovalProgress.value = job.progress;
+						setPointRemovalStatus(`Konwersja Potree: ${Math.round(job.progress)}% bieżącego etapu`);
+					} else {
+						pointRemovalProgress.removeAttribute("value");
+						setPointRemovalStatus("PotreeConverter przygotowuje wynik do wyświetlenia…");
+					}
+				} else if (job.status === "completed") {
+					pointRemovalProgress.value = 100;
+					return job;
+				} else if (job.status === "failed") {
+					throw new Error(job.error || "Usuwanie punktów nie powiodło się.");
+				}
+
+				await new Promise(resolve => window.setTimeout(resolve, 1000));
+			}
+		}
+
+		importToggle.addEventListener("click", () => {
+			setPointRemovalPicking(false);
+			setPanelOpen(true);
+		});
 		importClose.addEventListener("click", () => setPanelOpen(false));
 		viewer.scene.addEventListener("volume_added", refreshClippingBoxes);
 		viewer.scene.addEventListener("volume_removed", refreshClippingBoxes);
@@ -1013,6 +1317,61 @@
 		});
 
 		pivotMode.addEventListener("change", updatePivotControls);
+		pointRemovalPick.addEventListener("click", () => {
+			try {
+				pointRemovalRadiusValue();
+				if (!activeCloud?.sourceAvailable) {
+					throw new Error("Wczytaj chmurę z zachowanym plikiem LAS/LAZ.");
+				}
+				setPanelOpen(false);
+				setPointRemovalPicking(true);
+			} catch (error) {
+				setPointRemovalStatus(error.message, "error");
+			}
+		});
+
+		pointRemovalUndo.addEventListener("click", undoPointRemovalSelection);
+		pointRemovalClear.addEventListener("click", () => {
+			clearPointRemovalSelections();
+			setPointRemovalStatus("Wyczyszczono wszystkie zaznaczenia.");
+		});
+
+		viewer.renderer.domElement.addEventListener("mousedown", event => {
+			if (pointRemovalPicking && event.button === 0) {
+				pointRemovalMouseDown = { x: event.clientX, y: event.clientY };
+			}
+		});
+
+		viewer.renderer.domElement.addEventListener("mouseup", event => {
+			if (!pointRemovalPicking || event.button !== 0 || !pointRemovalMouseDown) {
+				return;
+			}
+			const distance = Math.hypot(
+				event.clientX - pointRemovalMouseDown.x,
+				event.clientY - pointRemovalMouseDown.y
+			);
+			pointRemovalMouseDown = null;
+			if (distance > 4) {
+				return;
+			}
+
+			const rect = viewer.renderer.domElement.getBoundingClientRect();
+			try {
+				addPointRemovalSelection({
+					x: event.clientX - rect.left,
+					y: event.clientY - rect.top,
+				});
+			} catch (error) {
+				setPointRemovalStatus(error.message, "error");
+			}
+		});
+
+		window.addEventListener("keydown", event => {
+			if (event.key === "Escape" && pointRemovalPicking) {
+				setPointRemovalPicking(false);
+				setPointRemovalStatus("Zakończono wybieranie. Otwórz panel, aby zapisać wynik.");
+			}
+		});
 
 		cloudFile.addEventListener("change", () => {
 			const file = cloudFile.files[0];
@@ -1113,6 +1472,43 @@
 			}
 		});
 
+		pointRemovalForm.addEventListener("submit", async event => {
+			event.preventDefault();
+			const name = pointRemovalName.value.trim();
+			if (!name) {
+				setPointRemovalStatus("Podaj nazwę wynikowej chmury.", "error");
+				return;
+			}
+
+			setPointRemovalPicking(false);
+			const controls = [...pointRemovalForm.querySelectorAll("input, button")];
+			controls.forEach(control => { control.disabled = true; });
+			pointRemovalProgress.value = 0;
+			pointRemovalLog.textContent = "";
+			pointRemovalLogDetails.hidden = true;
+			setPointRemovalStatus("Przygotowywanie lokalnego usuwania punktów…");
+
+			try {
+				const payload = buildPointRemovalPayload(name);
+				const queuedJob = await createPointRemoval(payload);
+				const completedJob = await waitForPointRemoval(queuedJob.id);
+				const removedPoints = completedJob.removalResult?.removedPoints;
+				await refreshCloudList();
+				cloudList.value = completedJob.pointCloudUrl;
+				await loadPointCloud(completedJob.pointCloudUrl, completedJob.name);
+				pointRemovalForm.reset();
+				setPointRemovalStatus(removedPoints == null
+					? "Gotowe. Nowa chmura została zapisana i wczytana."
+					: `Gotowe. Usunięto ${removedPoints.toLocaleString("pl-PL")} punktów.`);
+			} catch (error) {
+				pointRemovalProgress.value = 0;
+				setPointRemovalStatus(error.message, "error");
+			} finally {
+				controls.forEach(control => { control.disabled = false; });
+				updatePointRemovalControls();
+			}
+		});
+
 		transformForm.addEventListener("submit", async event => {
 			event.preventDefault();
 			const name = transformName.value.trim();
@@ -1161,6 +1557,7 @@
 				}
 				segmentationEngineAvailable = health.segmentationAvailable !== false;
 				transformationEngineAvailable = health.transformationAvailable !== false;
+				pointRemovalEngineAvailable = health.pointRemovalAvailable !== false;
 				updateSegmentationControls();
 
 				const clouds = await refreshCloudList();

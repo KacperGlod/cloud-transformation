@@ -79,6 +79,27 @@ Katalog wynikowy zawiera:
 Chmury bez oryginalnego LAS/LAZ nadal można wyświetlać, ale przycisk
 segmentacji będzie dla nich nieaktywny.
 
+## Ręczne usuwanie punktów z sąsiedztwem
+
+Narzędzie pędzla pozwala usuwać małe, nieregularne fragmenty bez używania
+clipping boxa. Każde kliknięcie wskazuje rzeczywisty punkt chmury i tworzy
+wokół niego sferyczne zaznaczenie o podanym promieniu.
+
+1. Wczytaj chmurę z zachowanym plikiem źródłowym LAS/LAZ.
+2. W sekcji `Usuń punkty z sąsiedztwem` ustaw promień.
+3. Kliknij `Wybierz punkty w widoku`, a następnie klikaj niepasujące punkty.
+   Przeciąganie nadal obraca widok, a klawisz `Esc` kończy wybieranie.
+4. Otwórz panel ponownie. W razie potrzeby cofnij ostatnie zaznaczenie albo
+   wyczyść wszystkie.
+5. Podaj nazwę wyniku i kliknij `Usuń zaznaczone i przekonwertuj`.
+
+Czerwone kule są tylko podglądem. Podczas zapisu serwer usuwa z oryginalnego
+LAS/LAZ wszystkie punkty znajdujące się wewnątrz co najmniej jednej zaznaczonej
+kuli, zapisuje nowy LAZ i uruchamia PotreeConverter. Oryginał pozostaje bez
+zmian. `cloud-info.json` zachowuje środki i promienie zaznaczeń, statystyki oraz
+powiązanie z chmurą źródłową, a pełny przebieg trafia do
+`point-removal.log` i `conversion.log`.
+
 ## Transformacje współrzędnych
 
 Transformacje działają lokalnie bez PDAL. Skrypt
