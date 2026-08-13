@@ -6,11 +6,8 @@ const exec = require('child_process').exec;
 const fs = require("fs");
 const fsp = fs.promises;
 const concat = require('gulp-concat');
-const connect = require('gulp-connect');
 const {watch} = gulp;
 
-const {createExamplesPage} = require("./src/tools/create_potree_page");
-const {createGithubPage} = require("./src/tools/create_github_page");
 const {createIconsPage} = require("./src/tools/create_icons_page");
 
 
@@ -74,24 +71,6 @@ let shaders = [
 	"src/materials/shaders/blur.vs",
 	"src/materials/shaders/blur.fs",
 ];
-
-// For development, it is now possible to use 'gulp webserver'
-// from the command line to start the server (default port is 8080)
-gulp.task('webserver', gulp.series(async function() {
-	server = connect.server({
-		port: 1234,
-		https: false,
-	});
-}));
-
-gulp.task('examples_page', async function(done) {
-	await Promise.all([
-		createExamplesPage(),
-		createGithubPage(),
-	]);
-
-	done();
-});
 
 gulp.task('icons_viewer', async function(done) {
 	await createIconsPage();
@@ -164,7 +143,7 @@ gulp.task("shaders", async function(){
 
 gulp.task('build', 
 	gulp.series(
-		gulp.parallel("workers", "lazylibs", "shaders", "icons_viewer", "examples_page"),
+		gulp.parallel("workers", "lazylibs", "shaders", "icons_viewer"),
 		async function(done){
 			gulp.src(paths.html).pipe(gulp.dest('build/potree'));
 
@@ -184,7 +163,7 @@ gulp.task("pack", async function(){
 	});
 });
 
-gulp.task('watch', gulp.parallel("build", "pack", "webserver", async function() {
+gulp.task('watch', gulp.parallel("build", "pack", async function() {
 
 	let watchlist = [
 		'src/**/*.js',
@@ -194,7 +173,6 @@ gulp.task('watch', gulp.parallel("build", "pack", "webserver", async function() 
 		'src/**/*.vs',
 		'src/**/*.fs',
 		'resources/**/*',
-		'examples//**/*.json',
 		'!resources/icons/index.html',
 	];
 
