@@ -205,14 +205,16 @@
 			border-top: 1px solid rgba(255, 255, 255, 0.12);
 		}
 
-		#import_progress {
+		#import_progress,
+		#segment_progress {
 			width: 100%;
 			height: 0.7rem;
 			margin-top: 0.8rem;
 			accent-color: #3c9eff;
 		}
 
-		#import_status {
+		#import_status,
+		#segment_status {
 			min-height: 1.2rem;
 			margin: 0.5rem 0 0;
 			color: #cbd7e2;
@@ -220,11 +222,13 @@
 			line-height: 1.4;
 		}
 
-		#import_status[data-kind="error"] {
+		#import_status[data-kind="error"],
+		#segment_status[data-kind="error"] {
 			color: #ff9d9d;
 		}
 
-		#import_log {
+		#import_log,
+		#segment_log {
 			max-height: 9rem;
 			overflow: auto;
 			margin: 0.55rem 0 0;
@@ -240,6 +244,16 @@
 			margin: 0.45rem 0 0;
 			color: #93a3b2;
 			font-size: 0.78rem;
+			line-height: 1.4;
+		}
+
+		.source-summary {
+			margin: 0.55rem 0 0;
+			padding: 0.65rem;
+			border-radius: 0.4rem;
+			background: rgba(255, 255, 255, 0.06);
+			color: #cbd7e2;
+			font-size: 0.82rem;
 			line-height: 1.4;
 		}
 
@@ -276,7 +290,7 @@
 	<div id="viewer_status">Wczytywanie chmury punktów…</div>
 
 	<button id="import_toggle" type="button" aria-controls="import_panel" aria-expanded="false">
-		Dodaj LAS/LAZ
+		Chmury i segmentacja
 	</button>
 
 	<aside id="import_panel" aria-label="Import chmury punktów" hidden>
@@ -318,6 +332,46 @@
 				<pre id="import_log"></pre>
 			</details>
 		</form>
+
+		<hr class="panel-divider">
+
+		<form id="segment_form">
+			<div class="section-label">Wytnij fragment chmury</div>
+			<p id="segment_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
+
+			<div class="form-group">
+				<label for="clip_box_list">Clipping box</label>
+				<div class="actions">
+					<select id="clip_box_list" aria-label="Clipping box"></select>
+					<button id="clip_box_add" class="secondary-button" type="button">Dodaj box</button>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="segment_mode">Zachowaj punkty</label>
+				<select id="segment_mode">
+					<option value="inside">Wewnątrz clipping boxa</option>
+					<option value="outside">Poza clipping boxem</option>
+				</select>
+			</div>
+
+			<div class="form-group">
+				<label for="segment_name">Nazwa wynikowej chmury i pliku LAZ</label>
+				<input id="segment_name" name="segmentName" type="text" maxlength="120" required>
+			</div>
+
+			<button id="segment_button" class="primary-button" type="submit" style="width: 100%; margin-top: 0.85rem;">
+				Wytnij i przekonwertuj
+			</button>
+
+			<progress id="segment_progress" max="100" value="0"></progress>
+			<p id="segment_status" role="status">Ustaw clipping box, wybierz tryb i nazwę wyniku.</p>
+			<p class="helper-text">Wynik zostanie zapisany lokalnie w folderze <code>pointclouds</code>.</p>
+			<details id="segment_log_details" hidden>
+				<summary>Szczegóły segmentacji i konwersji</summary>
+				<pre id="segment_log"></pre>
+			</details>
+		</form>
 	</aside>
 
 	<div class="potree_container" style="position: absolute; width: 100%; height: 100%; left: 0; top: 0;">
@@ -349,12 +403,26 @@
 		const importStatus = document.getElementById("import_status");
 		const importLog = document.getElementById("import_log");
 		const logDetails = document.getElementById("log_details");
+		const segmentForm = document.getElementById("segment_form");
+		const segmentSource = document.getElementById("segment_source");
+		const clipBoxList = document.getElementById("clip_box_list");
+		const clipBoxAdd = document.getElementById("clip_box_add");
+		const segmentMode = document.getElementById("segment_mode");
+		const segmentName = document.getElementById("segment_name");
+		const segmentButton = document.getElementById("segment_button");
+		const segmentProgress = document.getElementById("segment_progress");
+		const segmentStatus = document.getElementById("segment_status");
+		const segmentLog = document.getElementById("segment_log");
+		const segmentLogDetails = document.getElementById("segment_log_details");
 		const renderArea = document.getElementById("potree_render_area");
 
 		const viewer = new Potree.Viewer(renderArea);
 		const loadedPointClouds = new Map();
 		let activePointCloud = null;
+		let activeCloud = null;
 		let availableClouds = [];
+		let clippingBoxes = [];
+		let segmentationEngineAvailable = true;
 		window.viewer = viewer;
 
 		viewer.setEDLEnabled(true);
@@ -384,6 +452,55 @@
 			importStatus.dataset.kind = kind;
 		}
 
+		function setSegmentStatus(message, kind = "info") {
+			segmentStatus.textContent = message;
+			segmentStatus.dataset.kind = kind;
+		}
+
+		function refreshClippingBoxes() {
+			const previousValue = clipBoxList.value;
+			clippingBoxes = viewer.scene.volumes.filter(volume => volume.clip && volume instanceof Potree.BoxVolume);
+			clipBoxList.replaceChildren();
+
+			for (const [index, volume] of clippingBoxes.entries()) {
+				const option = document.createElement("option");
+				option.value = volume.uuid;
+				option.textContent = volume.name || `Clipping box ${index + 1}`;
+				clipBoxList.append(option);
+			}
+
+			if (clippingBoxes.some(volume => volume.uuid === previousValue)) {
+				clipBoxList.value = previousValue;
+			} else if (clippingBoxes.length > 0) {
+				clipBoxList.value = clippingBoxes.at(-1).uuid;
+			}
+			clipBoxList.disabled = clippingBoxes.length === 0;
+			updateSegmentationControls();
+		}
+
+		function updateSegmentationControls() {
+			const hasSource = Boolean(activeCloud?.sourceAvailable);
+			const hasBox = clippingBoxes.length > 0;
+			segmentButton.disabled = !segmentationEngineAvailable || !hasSource || !hasBox;
+
+			if (!segmentationEngineAvailable) {
+				segmentSource.textContent = "Lokalny silnik segmentacji jest niedostępny.";
+				setSegmentStatus("Sprawdź plik tools/segment_pointcloud.py i bibliotekę LASzip.", "error");
+			} else if (!activeCloud) {
+				segmentSource.textContent = "Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.";
+			} else if (!hasSource) {
+				segmentSource.textContent = `Chmura „${activeCloud.name}” nie ma oryginalnego pliku LAS/LAZ.`;
+				setSegmentStatus("Segmentacja tej chmury wymaga uzupełnienia pliku źródłowego.", "error");
+			} else {
+				segmentSource.textContent = `Źródło: ${activeCloud.name} (${activeCloud.sourceFile})`;
+				if (!hasBox) {
+					setSegmentStatus("Dodaj i ustaw clipping box w widoku.");
+				} else if (segmentStatus.dataset.kind === "error") {
+					setSegmentStatus("Ustaw clipping box, wybierz tryb i nazwę wyniku.");
+				}
+			}
+		}
+
 		function setPanelOpen(open) {
 			importPanel.hidden = !open;
 			importToggle.hidden = open;
@@ -396,6 +513,8 @@
 
 		async function loadPointCloud(url, name) {
 			const normalizedUrl = normalizeCloudUrl(url);
+			const cloudDescriptor = availableClouds.find(cloud => normalizeCloudUrl(cloud.url) === normalizedUrl)
+				|| { name, slug: name, url: normalizedUrl, sourceAvailable: false, sourceFile: null };
 			showViewerStatus(`Wczytywanie chmury "${name}"…`);
 
 			if (loadedPointClouds.has(normalizedUrl)) {
@@ -404,8 +523,10 @@
 				}
 				activePointCloud = loadedPointClouds.get(normalizedUrl);
 				activePointCloud.visible = true;
+				activeCloud = cloudDescriptor;
 				viewer.fitToScreen();
 				localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
+				updateSegmentationControls();
 				hideViewerStatus();
 				return;
 			}
@@ -431,8 +552,10 @@
 					viewer.scene.addPointCloud(pointCloud);
 					loadedPointClouds.set(normalizedUrl, pointCloud);
 					activePointCloud = pointCloud;
+					activeCloud = cloudDescriptor;
 					viewer.fitToScreen();
 					localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
+					updateSegmentationControls();
 					hideViewerStatus();
 					resolve();
 				});
@@ -440,6 +563,7 @@
 		}
 
 		async function refreshCloudList() {
+			const previousUrl = cloudList.value;
 			const response = await fetch("/api/clouds", { cache: "no-store" });
 			if (!response.ok) {
 				throw new Error("Nie udało się pobrać listy chmur.");
@@ -452,11 +576,19 @@
 			for (const cloud of availableClouds) {
 				const option = document.createElement("option");
 				option.value = cloud.url;
-				option.textContent = `${cloud.name} (${cloud.format})`;
+				const relation = cloud.parentCloud ? ` ← ${cloud.parentCloud}` : "";
+				option.textContent = `${cloud.name} (${cloud.format})${relation}`;
 				cloudList.append(option);
+			}
+			if (availableClouds.some(cloud => cloud.url === previousUrl)) {
+				cloudList.value = previousUrl;
+			}
+			if (activeCloud) {
+				activeCloud = availableClouds.find(cloud => cloud.slug === activeCloud.slug) || activeCloud;
 			}
 
 			cloudLoad.disabled = availableClouds.length === 0;
+			updateSegmentationControls();
 			return availableClouds;
 		}
 
@@ -533,8 +665,118 @@
 			}
 		}
 
+		function selectedClippingBox() {
+			return clippingBoxes.find(volume => volume.uuid === clipBoxList.value) || null;
+		}
+
+		function buildSegmentationPayload(name, mode) {
+			const clipBox = selectedClippingBox();
+			if (!activePointCloud || !activeCloud || !clipBox) {
+				throw new Error("Wczytaj chmurę i wybierz clipping box.");
+			}
+			if (!activeCloud.sourceAvailable) {
+				throw new Error("Aktywna chmura nie ma zachowanego pliku LAS/LAZ.");
+			}
+			if ([clipBox.scale.x, clipBox.scale.y, clipBox.scale.z].some(value => Math.abs(value) < 1e-9)) {
+				throw new Error("Clipping box nie może mieć zerowego rozmiaru.");
+			}
+
+			activePointCloud.updateMatrixWorld(true);
+			clipBox.updateMatrixWorld(true);
+			const offset = activePointCloud.pcoGeometry?.offset || { x: 0, y: 0, z: 0 };
+			const pointCloudMatrixWorld = activePointCloud.matrixWorld.clone();
+			const removeOffset = pointCloudMatrixWorld.clone().identity().makeTranslation(-offset.x, -offset.y, -offset.z);
+			const sourceToWorld = pointCloudMatrixWorld.clone().multiply(removeOffset);
+			const worldToBox = clipBox.matrixWorld.clone().invert();
+			const sourceToBox = worldToBox.multiply(sourceToWorld);
+			const sourceToBoxElements = Array.from(sourceToBox.elements);
+			if (!sourceToBoxElements.every(Number.isFinite)) {
+				throw new Error("Nie udało się obliczyć transformacji clipping boxa.");
+			}
+
+			return {
+				name,
+				mode,
+				sourceCloud: activeCloud.slug,
+				sourceToBoxMatrix: sourceToBoxElements,
+				clipBox: {
+					name: clipBox.name || "Clipping box",
+					matrixWorld: Array.from(clipBox.matrixWorld.elements),
+					position: [clipBox.position.x, clipBox.position.y, clipBox.position.z],
+					rotation: [clipBox.rotation.x, clipBox.rotation.y, clipBox.rotation.z],
+					scale: [clipBox.scale.x, clipBox.scale.y, clipBox.scale.z],
+					pointCloudMatrixWorld: Array.from(pointCloudMatrixWorld.elements),
+					pointCloudOffset: [offset.x, offset.y, offset.z],
+				},
+			};
+		}
+
+		async function createSegmentation(payload) {
+			const response = await fetch("/api/segmentations", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const result = await response.json().catch(() => ({}));
+			if (response.status !== 202) {
+				throw new Error(result.error || "Nie udało się rozpocząć segmentacji.");
+			}
+			return result;
+		}
+
+		async function waitForSegmentation(jobId) {
+			while (true) {
+				const response = await fetch(`/api/conversions/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+				if (!response.ok) {
+					throw new Error("Nie udało się odczytać stanu segmentacji.");
+				}
+
+				const job = await response.json();
+				segmentLog.textContent = job.log || "";
+				segmentLogDetails.hidden = !job.log;
+
+				if (job.status === "queued") {
+					segmentProgress.removeAttribute("value");
+					setSegmentStatus("Zadanie oczekuje w lokalnej kolejce…");
+				} else if (job.status === "segmenting") {
+					segmentProgress.value = job.progress || 0;
+					setSegmentStatus(`Wybieranie punktów: ${Math.round(job.progress || 0)}%`);
+				} else if (job.status === "converting") {
+					if (job.progress > 0) {
+						segmentProgress.value = job.progress;
+						setSegmentStatus(`Konwersja Potree: ${Math.round(job.progress)}% bieżącego etapu`);
+					} else {
+						segmentProgress.removeAttribute("value");
+						setSegmentStatus("PotreeConverter przygotowuje wynik do wyświetlenia…");
+					}
+				} else if (job.status === "completed") {
+					segmentProgress.value = 100;
+					return job;
+				} else if (job.status === "failed") {
+					throw new Error(job.error || "Segmentacja nie powiodła się.");
+				}
+
+				await new Promise(resolve => window.setTimeout(resolve, 1000));
+			}
+		}
+
 		importToggle.addEventListener("click", () => setPanelOpen(true));
 		importClose.addEventListener("click", () => setPanelOpen(false));
+		viewer.scene.addEventListener("volume_added", refreshClippingBoxes);
+		viewer.scene.addEventListener("volume_removed", refreshClippingBoxes);
+
+		clipBoxAdd.addEventListener("click", () => {
+			setPanelOpen(false);
+			const volume = viewer.volumeTool.startInsertion({ clip: true });
+			volume.name = `Clipping box ${clippingBoxes.length + 1}`;
+			viewer.setClipTask(Potree.ClipTask.SHOW_INSIDE);
+		});
+
+		segmentMode.addEventListener("change", () => {
+			viewer.setClipTask(segmentMode.value === "inside"
+				? Potree.ClipTask.SHOW_INSIDE
+				: Potree.ClipTask.SHOW_OUTSIDE);
+		});
 
 		cloudFile.addEventListener("change", () => {
 			const file = cloudFile.files[0];
@@ -594,6 +836,47 @@
 			}
 		});
 
+		segmentForm.addEventListener("submit", async event => {
+			event.preventDefault();
+			const name = segmentName.value.trim();
+			if (!name) {
+				setSegmentStatus("Podaj nazwę wynikowej chmury.", "error");
+				return;
+			}
+
+			segmentButton.disabled = true;
+			clipBoxAdd.disabled = true;
+			clipBoxList.disabled = true;
+			segmentMode.disabled = true;
+			segmentName.disabled = true;
+			segmentProgress.value = 0;
+			segmentLog.textContent = "";
+			segmentLogDetails.hidden = true;
+			setSegmentStatus("Przygotowywanie lokalnej segmentacji…");
+
+			try {
+				const payload = buildSegmentationPayload(name, segmentMode.value);
+				const queuedJob = await createSegmentation(payload);
+				const completedJob = await waitForSegmentation(queuedJob.id);
+				await refreshCloudList();
+				cloudList.value = completedJob.pointCloudUrl;
+				await loadPointCloud(completedJob.pointCloudUrl, completedJob.name);
+				const selectedPoints = completedJob.selection?.selectedPoints;
+				setSegmentStatus(selectedPoints == null
+					? "Gotowe. Wynikowa chmura została zapisana i wczytana."
+					: `Gotowe. Zapisano ${selectedPoints.toLocaleString("pl-PL")} punktów.`);
+				segmentName.value = "";
+			} catch (error) {
+				segmentProgress.value = 0;
+				setSegmentStatus(error.message, "error");
+			} finally {
+				clipBoxAdd.disabled = false;
+				segmentMode.disabled = false;
+				segmentName.disabled = false;
+				refreshClippingBoxes();
+			}
+		});
+
 		async function initialize() {
 			try {
 				const healthResponse = await fetch("/api/health", { cache: "no-store" });
@@ -602,6 +885,8 @@
 					convertButton.disabled = true;
 					setImportStatus("Nie znaleziono tools/PotreeConverter/PotreeConverter.exe.", "error");
 				}
+				segmentationEngineAvailable = health.segmentationAvailable !== false;
+				updateSegmentationControls();
 
 				const clouds = await refreshCloudList();
 				const savedUrl = localStorage.getItem(LAST_CLOUD_KEY);
@@ -621,6 +906,7 @@
 			console.error(event.error || event.message);
 		});
 
+		refreshClippingBoxes();
 		initialize();
 	</script>
 </body>

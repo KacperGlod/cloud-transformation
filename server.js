@@ -13,8 +13,12 @@ const ROOT_DIR = __dirname;
 const POINTCLOUDS_DIR = path.join(ROOT_DIR, "pointclouds");
 const RUNTIME_DIR = path.join(ROOT_DIR, ".runtime");
 const UPLOADS_DIR = path.join(RUNTIME_DIR, "uploads");
+const JOBS_DIR = path.join(RUNTIME_DIR, "jobs");
 const CONVERTER_DIR = path.join(ROOT_DIR, "tools", "PotreeConverter");
 const CONVERTER_EXE = path.join(CONVERTER_DIR, "PotreeConverter.exe");
+const LASZIP_DLL = path.join(CONVERTER_DIR, "laszip.dll");
+const SEGMENTER_SCRIPT = path.join(ROOT_DIR, "tools", "segment_pointcloud.py");
+const PYTHON_COMMAND = process.env.PYTHON || "python";
 const HOST = process.env.HOST || "::1";
 const PORT = Number(process.env.PORT || 1234);
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 100 * 1024 ** 3);
@@ -101,6 +105,7 @@ function appendJobLog(job, chunk) {
 function publicJob(job) {
 	return {
 		id: job.id,
+		kind: job.kind,
 		name: job.name,
 		slug: job.slug,
 		filename: job.filename,
@@ -108,11 +113,36 @@ function publicJob(job) {
 		uploadProgress: job.uploadProgress,
 		progress: job.progress,
 		pointCloudUrl: job.pointCloudUrl,
+		sourceCloud: job.sourceCloud || null,
+		mode: job.mode || null,
+		selection: job.selection || null,
 		error: job.error,
 		log: job.log,
 		createdAt: job.createdAt,
 		updatedAt: job.updatedAt,
 	};
+}
+
+async function readCloudInfo(directory) {
+	const infoPath = path.join(directory, "cloud-info.json");
+	try {
+		return JSON.parse(await fsp.readFile(infoPath, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+async function findSourceFile(directory, cloudInfo = null) {
+	if (cloudInfo && typeof cloudInfo.sourceFile === "string") {
+		const declaredPath = path.join(directory, path.basename(cloudInfo.sourceFile));
+		if (isPathInside(directory, declaredPath) && fs.existsSync(declaredPath)) {
+			return declaredPath;
+		}
+	}
+
+	const entries = await fsp.readdir(directory, { withFileTypes: true });
+	const source = entries.find(entry => entry.isFile() && [".las", ".laz"].includes(path.extname(entry.name).toLowerCase()));
+	return source ? path.join(directory, source.name) : null;
 }
 
 async function listPointClouds() {
@@ -137,16 +167,119 @@ async function listPointClouds() {
 		}
 
 		if (entryFile) {
+			const cloudInfo = await readCloudInfo(directory);
+			const sourceFile = await findSourceFile(directory, cloudInfo);
 			clouds.push({
-				name: entry.name,
+				name: cloudInfo?.name || entry.name,
 				slug: entry.name,
 				url: `/pointclouds/${encodeURIComponent(entry.name)}/${entryFile}`,
 				format: entryFile === "metadata.json" ? "Potree 2.x" : "Potree 1.x",
+				sourceAvailable: Boolean(sourceFile),
+				sourceFile: sourceFile ? path.basename(sourceFile) : null,
+				parentCloud: cloudInfo?.parentCloud || null,
+				operation: cloudInfo?.operation || null,
 			});
 		}
 	}
 
 	return clouds.sort((left, right) => left.name.localeCompare(right.name, "pl"));
+}
+
+async function runSegmentation(job) {
+	job.status = "segmenting";
+	job.progress = 0;
+	job.updatedAt = new Date().toISOString();
+	let completeOutput = "";
+
+	await new Promise((resolve, reject) => {
+		const segmenter = spawn(
+			PYTHON_COMMAND,
+			[
+				SEGMENTER_SCRIPT,
+				"--input", job.sourcePath,
+				"--output", job.inputPath,
+				"--laszip", LASZIP_DLL,
+				"--matrix", JSON.stringify(job.sourceToBoxMatrix),
+				"--mode", job.mode,
+			],
+			{
+				cwd: ROOT_DIR,
+				shell: false,
+				windowsHide: true,
+			}
+		);
+
+		activeConverter = segmenter;
+		const onOutput = chunk => {
+			appendJobLog(job, chunk);
+			completeOutput = `${completeOutput}${chunk.toString("utf8")}`.slice(-200_000);
+		};
+
+		segmenter.stdout.on("data", onOutput);
+		segmenter.stderr.on("data", onOutput);
+		segmenter.once("error", error => {
+			activeConverter = null;
+			if (error.code === "ENOENT") {
+				reject(new Error(`Nie znaleziono interpretera Python (${PYTHON_COMMAND}).`));
+			} else {
+				reject(error);
+			}
+		});
+		segmenter.once("close", code => {
+			activeConverter = null;
+			if (code === 0) {
+				resolve();
+			} else {
+				reject(new Error(`Segmentacja zakończyła pracę z kodem ${code}. Sprawdź szczegóły zadania.`));
+			}
+		});
+	});
+
+	const resultLines = [...completeOutput.matchAll(/^SEGMENT_RESULT\s+(.+)$/gm)];
+	if (resultLines.length === 0) {
+		throw new Error("Segmentacja nie zwróciła informacji o pliku wynikowym.");
+	}
+
+	try {
+		job.selection = JSON.parse(resultLines.at(-1)[1]);
+	} catch {
+		throw new Error("Segmentacja zwróciła nieprawidłowe podsumowanie.");
+	}
+
+	if (!fs.existsSync(job.inputPath)) {
+		throw new Error("Segmentacja nie utworzyła wynikowego pliku LAZ.");
+	}
+}
+
+async function writeCloudInfo(job) {
+	const info = {
+		schemaVersion: 1,
+		id: job.slug,
+		name: job.name,
+		slug: job.slug,
+		sourceFile: job.filename,
+		pointCloudFile: "metadata.json",
+		createdAt: new Date().toISOString(),
+		parentCloud: job.sourceCloud || null,
+		operation: job.kind === "segmentation"
+			? {
+				type: "segmentation",
+				mode: job.mode,
+				clipBox: job.clipBox,
+				sourceToBoxMatrix: job.sourceToBoxMatrix,
+				statistics: job.selection,
+			}
+			: {
+				type: "import",
+				originalFilename: job.filename,
+			},
+	};
+
+	await fsp.writeFile(
+		path.join(job.outputDir, "cloud-info.json"),
+		`${JSON.stringify(info, null, 2)}\n`,
+		{ encoding: "utf8", flag: "wx" }
+	);
 }
 
 async function startNextConversion() {
@@ -167,6 +300,13 @@ async function startNextConversion() {
 	let outputCreated = false;
 
 	try {
+		if (job.kind === "segmentation") {
+			await runSegmentation(job);
+			job.progress = 0;
+		}
+
+		job.status = "converting";
+		job.updatedAt = new Date().toISOString();
 		await fsp.mkdir(job.outputDir, { recursive: false });
 		outputCreated = true;
 
@@ -187,6 +327,8 @@ async function startNextConversion() {
 			logStream.write([
 				`Cloud: ${job.name}`,
 				`Source file: ${job.filename}`,
+				`Operation: ${job.kind}`,
+				...(job.sourceCloud ? [`Parent cloud: ${job.sourceCloud}`, `Selection: ${job.mode}`] : []),
 				`Started: ${new Date().toISOString()}`,
 				`Command: PotreeConverter.exe <source> -o <output> -m poisson`,
 				"",
@@ -230,6 +372,14 @@ async function startNextConversion() {
 			throw new Error("Nieprawidłowa nazwa oryginalnego pliku.");
 		}
 		await fsp.rename(job.inputPath, originalFilePath);
+		await writeCloudInfo(job);
+		if (job.kind === "segmentation") {
+			await fsp.writeFile(
+				path.join(job.outputDir, "segmentation.log"),
+				`${job.log}\n`,
+				"utf8"
+			);
+		}
 
 		job.status = "completed";
 		job.progress = 100;
@@ -244,7 +394,7 @@ async function startNextConversion() {
 			await removeFailedOutput(job.outputDir).catch(() => {});
 		}
 	} finally {
-		await removeRuntimePath(job.uploadDir).catch(() => {});
+		await removeRuntimePath(job.workDir).catch(() => {});
 		activeJobId = null;
 		activeConverter = null;
 		setImmediate(startNextConversion);
@@ -294,6 +444,7 @@ async function handleUpload(request, response, url) {
 	const now = new Date().toISOString();
 	const job = {
 		id,
+		kind: "import",
 		name: requestedName.slice(0, 120),
 		slug,
 		filename,
@@ -305,7 +456,7 @@ async function handleUpload(request, response, url) {
 		log: "",
 		createdAt: now,
 		updatedAt: now,
-		uploadDir,
+		workDir: uploadDir,
 		inputPath,
 		outputDir,
 	};
@@ -355,12 +506,166 @@ async function handleUpload(request, response, url) {
 	}
 }
 
+async function readJsonBody(request, maxBytes = 128 * 1024) {
+	const chunks = [];
+	let receivedBytes = 0;
+	for await (const chunk of request) {
+		receivedBytes += chunk.length;
+		if (receivedBytes > maxBytes) {
+			throw new Error("Żądanie jest zbyt duże.");
+		}
+		chunks.push(chunk);
+	}
+
+	if (receivedBytes === 0) {
+		throw new Error("Brak danych segmentacji.");
+	}
+
+	try {
+		return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+	} catch {
+		throw new Error("Nieprawidłowy format danych segmentacji.");
+	}
+}
+
+function normalizedMatrix(value, label) {
+	if (!Array.isArray(value) || value.length !== 16) {
+		throw new Error(`${label} musi zawierać 16 wartości.`);
+	}
+
+	const matrix = value.map(Number);
+	if (!matrix.every(Number.isFinite)) {
+		throw new Error(`${label} zawiera nieprawidłowe wartości.`);
+	}
+	return matrix;
+}
+
+function normalizedVector(value, length, label) {
+	if (!Array.isArray(value) || value.length !== length) {
+		throw new Error(`${label} musi zawierać ${length} wartości.`);
+	}
+	const vector = value.map(Number);
+	if (!vector.every(Number.isFinite)) {
+		throw new Error(`${label} zawiera nieprawidłowe wartości.`);
+	}
+	return vector;
+}
+
+async function handleSegmentation(request, response) {
+	if (!fs.existsSync(CONVERTER_EXE) || !fs.existsSync(LASZIP_DLL) || !fs.existsSync(SEGMENTER_SCRIPT)) {
+		sendJson(response, 503, { error: "Lokalny silnik segmentacji nie jest kompletny." });
+		return;
+	}
+
+	let body;
+	try {
+		body = await readJsonBody(request);
+	} catch (error) {
+		sendJson(response, 400, { error: error.message });
+		return;
+	}
+
+	try {
+		const requestedName = String(body.name || "").trim();
+		const slug = slugify(requestedName);
+		if (!slug) {
+			throw new Error("Podaj prawidłową nazwę chmury wynikowej.");
+		}
+
+		const mode = String(body.mode || "");
+		if (!["inside", "outside"].includes(mode)) {
+			throw new Error("Wybierz zachowanie punktów wewnątrz albo na zewnątrz clipping boxa.");
+		}
+
+		const sourceCloud = String(body.sourceCloud || "");
+		if (!sourceCloud || path.basename(sourceCloud) !== sourceCloud || [".", ".."].includes(sourceCloud)) {
+			throw new Error("Nieprawidłowa chmura źródłowa.");
+		}
+
+		const sourceToBoxMatrix = normalizedMatrix(body.sourceToBoxMatrix, "Macierz źródło-clipping box");
+		const clipBoxData = body.clipBox || {};
+		const clipBox = {
+			name: String(clipBoxData.name || "Clipping box").slice(0, 120),
+			matrixWorld: normalizedMatrix(clipBoxData.matrixWorld, "Macierz clipping boxa"),
+			position: normalizedVector(clipBoxData.position, 3, "Pozycja clipping boxa"),
+			rotation: normalizedVector(clipBoxData.rotation, 3, "Obrót clipping boxa"),
+			scale: normalizedVector(clipBoxData.scale, 3, "Skala clipping boxa"),
+			pointCloudMatrixWorld: normalizedMatrix(clipBoxData.pointCloudMatrixWorld, "Macierz chmury źródłowej"),
+			pointCloudOffset: normalizedVector(clipBoxData.pointCloudOffset, 3, "Offset chmury źródłowej"),
+		};
+
+		const outputDir = path.join(POINTCLOUDS_DIR, slug);
+		if (!isPathInside(POINTCLOUDS_DIR, outputDir)) {
+			throw new Error("Nieprawidłowa nazwa chmury wynikowej.");
+		}
+		if (reservedCloudNames.has(slug) || fs.existsSync(outputDir)) {
+			sendJson(response, 409, { error: `Chmura o nazwie "${slug}" już istnieje.` });
+			return;
+		}
+
+		const sourceDir = path.join(POINTCLOUDS_DIR, sourceCloud);
+		if (!isPathInside(POINTCLOUDS_DIR, sourceDir)) {
+			throw new Error("Nieprawidłowa chmura źródłowa.");
+		}
+		const sourceStat = await fsp.stat(sourceDir).catch(() => null);
+		if (!sourceStat?.isDirectory()) {
+			throw new Error("Nie znaleziono katalogu chmury źródłowej.");
+		}
+
+		const sourceInfo = await readCloudInfo(sourceDir);
+		const sourcePath = await findSourceFile(sourceDir, sourceInfo);
+		if (!sourcePath) {
+			throw new Error("Chmura źródłowa nie ma zachowanego oryginalnego pliku LAS/LAZ.");
+		}
+
+		const id = crypto.randomUUID();
+		const workDir = path.join(JOBS_DIR, id);
+		const filename = `${slug}.laz`;
+		const inputPath = path.join(workDir, filename);
+		const now = new Date().toISOString();
+		const job = {
+			id,
+			kind: "segmentation",
+			name: requestedName.slice(0, 120),
+			slug,
+			filename,
+			status: "queued",
+			uploadProgress: null,
+			progress: 0,
+			pointCloudUrl: null,
+			error: null,
+			log: "",
+			createdAt: now,
+			updatedAt: now,
+			workDir,
+			inputPath,
+			outputDir,
+			sourceCloud,
+			sourcePath,
+			mode,
+			clipBox,
+			sourceToBoxMatrix,
+			selection: null,
+		};
+
+		await fsp.mkdir(workDir, { recursive: true });
+		jobs.set(id, job);
+		reservedCloudNames.add(slug);
+		conversionQueue.push(id);
+		sendJson(response, 202, publicJob(job));
+		setImmediate(startNextConversion);
+	} catch (error) {
+		sendJson(response, 400, { error: error.message });
+	}
+}
+
 async function handleApi(request, response, url) {
 	if (request.method === "GET" && url.pathname === "/api/health") {
 		const clouds = await listPointClouds();
 		sendJson(response, 200, {
 			ok: true,
 			converterAvailable: fs.existsSync(CONVERTER_EXE),
+			segmentationAvailable: fs.existsSync(LASZIP_DLL) && fs.existsSync(SEGMENTER_SCRIPT),
 			activeJobId,
 			queuedJobs: conversionQueue.length,
 			cloudCount: clouds.length,
@@ -375,6 +680,11 @@ async function handleApi(request, response, url) {
 
 	if (request.method === "POST" && url.pathname === "/api/conversions") {
 		await handleUpload(request, response, url);
+		return true;
+	}
+
+	if (request.method === "POST" && url.pathname === "/api/segmentations") {
+		await handleSegmentation(request, response);
 		return true;
 	}
 
@@ -513,14 +823,19 @@ const server = http.createServer(async (request, response) => {
 async function start() {
 	await fsp.mkdir(POINTCLOUDS_DIR, { recursive: true });
 	await fsp.mkdir(UPLOADS_DIR, { recursive: true });
+	await fsp.mkdir(JOBS_DIR, { recursive: true });
 
 	if (!fs.existsSync(CONVERTER_EXE)) {
 		console.warn(`UWAGA: nie znaleziono konwertera: ${CONVERTER_EXE}`);
+	}
+	if (!fs.existsSync(LASZIP_DLL) || !fs.existsSync(SEGMENTER_SCRIPT)) {
+		console.warn("UWAGA: lokalny silnik segmentacji jest niedostępny.");
 	}
 
 	server.listen(PORT, HOST, () => {
 		console.log(`Cloud Transformation: http://localhost:${PORT}`);
 		console.log(`PotreeConverter: ${fs.existsSync(CONVERTER_EXE) ? "gotowy" : "niedostępny"}`);
+		console.log(`Segmentacja LAS/LAZ: ${fs.existsSync(LASZIP_DLL) && fs.existsSync(SEGMENTER_SCRIPT) ? "gotowa" : "niedostępna"}`);
 	});
 }
 

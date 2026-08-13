@@ -47,7 +47,37 @@ aby nie przeciążać komputera.
 
 Po udanej konwersji katalog chmury zawiera również oryginalny plik LAS/LAZ
 pod jego pierwotną nazwą oraz pełny zapis działania PotreeConvertera w pliku
-`conversion.log`.
+`conversion.log`. Plik `cloud-info.json` przechowuje lokalne informacje o
+pochodzeniu chmury i przygotowuje projekt do późniejszego podłączenia kont oraz
+bazy danych.
+
+## Wycinanie fragmentu chmury
+
+Segmentacja działa lokalnie i wymaga chmury, która ma zachowany oryginalny plik
+LAS lub LAZ. Do odczytu i zapisu punktów wykorzystywana jest biblioteka
+`tools/PotreeConverter/laszip.dll`, a skrypt segmentacji uruchamia systemowy
+Python 3.
+
+1. Wczytaj chmurę źródłową.
+2. Otwórz panel `Chmury i segmentacja`.
+3. Kliknij `Dodaj box`, a następnie ustaw jego pozycję, obrót i skalę w Potree.
+4. Wybierz zachowanie punktów wewnątrz albo poza clipping boxem.
+5. Podaj unikalną nazwę wynikowej chmury i kliknij `Wytnij i przekonwertuj`.
+
+Serwer wybiera punkty z oryginalnego LAS/LAZ, zapisuje wynik jako
+`pointclouds/<nazwa>/<nazwa>.laz`, uruchamia PotreeConverter i automatycznie
+wczytuje nową chmurę. Segmentacja obsługuje również obrócone clipping boxy.
+
+Katalog wynikowy zawiera:
+
+- wynikowy plik LAZ;
+- dane Potree (`metadata.json`, `octree.bin`, `hierarchy.bin`);
+- `segmentation.log` oraz `conversion.log`;
+- `cloud-info.json` z nazwą chmury źródłowej, trybem `inside`/`outside`,
+  transformacją clipping boxa i liczbą wybranych punktów.
+
+Chmury bez oryginalnego LAS/LAZ nadal można wyświetlać, ale przycisk
+segmentacji będzie dla nich nieaktywny.
 
 ## Ręczna podmiana chmury punktów
 
@@ -64,7 +94,8 @@ PotreeConverter 2.x plik `metadata.json`.
 
 ## Polecenia
 
-- `npm.cmd start` — uruchamia lokalny viewer, upload i kolejkę PotreeConvertera.
+- `npm.cmd start` — uruchamia lokalny viewer, upload, segmentację i kolejkę
+  PotreeConvertera.
 - `npm.cmd run build` — przebudowuje bibliotekę Potree.
 - `npm.cmd run dev` — przebudowuje bibliotekę i obserwuje jej pliki źródłowe; serwer uruchom osobno przez `npm.cmd start`.
 
