@@ -18,6 +18,7 @@ const CONVERTER_DIR = path.join(ROOT_DIR, "tools", "PotreeConverter");
 const CONVERTER_EXE = path.join(CONVERTER_DIR, "PotreeConverter.exe");
 const LASZIP_DLL = path.join(CONVERTER_DIR, "laszip.dll");
 const SEGMENTER_SCRIPT = path.join(ROOT_DIR, "tools", "segment_pointcloud.py");
+const TRANSFORMER_SCRIPT = path.join(ROOT_DIR, "tools", "transform_pointcloud.py");
 const PYTHON_COMMAND = process.env.PYTHON || "python";
 const HOST = process.env.HOST || "::1";
 const PORT = Number(process.env.PORT || 1234);
@@ -116,6 +117,8 @@ function publicJob(job) {
 		sourceCloud: job.sourceCloud || null,
 		mode: job.mode || null,
 		selection: job.selection || null,
+		transformation: job.transformation || null,
+		transformationResult: job.transformationResult || null,
 		error: job.error,
 		log: job.log,
 		createdAt: job.createdAt,
@@ -251,6 +254,75 @@ async function runSegmentation(job) {
 	}
 }
 
+async function runTransformation(job) {
+	job.status = "transforming";
+	job.progress = 0;
+	job.updatedAt = new Date().toISOString();
+	let completeOutput = "";
+
+	await new Promise((resolve, reject) => {
+		const transformer = spawn(
+			PYTHON_COMMAND,
+			[
+				TRANSFORMER_SCRIPT,
+				"--input", job.sourcePath,
+				"--output", job.inputPath,
+				"--laszip", LASZIP_DLL,
+				"--translation", JSON.stringify(job.transformation.translation),
+				"--rotation", JSON.stringify(job.transformation.rotationDegrees),
+				"--scale", JSON.stringify(job.transformation.scale),
+				"--pivot-mode", job.transformation.pivotMode,
+				"--pivot", JSON.stringify(job.transformation.pivot),
+			],
+			{
+				cwd: ROOT_DIR,
+				shell: false,
+				windowsHide: true,
+			}
+		);
+
+		activeConverter = transformer;
+		const onOutput = chunk => {
+			appendJobLog(job, chunk);
+			completeOutput = `${completeOutput}${chunk.toString("utf8")}`.slice(-200_000);
+		};
+
+		transformer.stdout.on("data", onOutput);
+		transformer.stderr.on("data", onOutput);
+		transformer.once("error", error => {
+			activeConverter = null;
+			if (error.code === "ENOENT") {
+				reject(new Error(`Nie znaleziono interpretera Python (${PYTHON_COMMAND}).`));
+			} else {
+				reject(error);
+			}
+		});
+		transformer.once("close", code => {
+			activeConverter = null;
+			if (code === 0) {
+				resolve();
+			} else {
+				reject(new Error(`Transformacja zakończyła pracę z kodem ${code}. Sprawdź szczegóły zadania.`));
+			}
+		});
+	});
+
+	const resultLines = [...completeOutput.matchAll(/^TRANSFORM_RESULT\s+(.+)$/gm)];
+	if (resultLines.length === 0) {
+		throw new Error("Transformacja nie zwróciła informacji o pliku wynikowym.");
+	}
+
+	try {
+		job.transformationResult = JSON.parse(resultLines.at(-1)[1]);
+	} catch {
+		throw new Error("Transformacja zwróciła nieprawidłowe podsumowanie.");
+	}
+
+	if (!fs.existsSync(job.inputPath)) {
+		throw new Error("Transformacja nie utworzyła wynikowego pliku LAZ.");
+	}
+}
+
 async function writeCloudInfo(job) {
 	const info = {
 		schemaVersion: 1,
@@ -269,10 +341,16 @@ async function writeCloudInfo(job) {
 				sourceToBoxMatrix: job.sourceToBoxMatrix,
 				statistics: job.selection,
 			}
-			: {
-				type: "import",
-				originalFilename: job.filename,
-			},
+			: job.kind === "transformation"
+				? {
+					type: "transformation",
+					...job.transformation,
+					result: job.transformationResult,
+				}
+				: {
+					type: "import",
+					originalFilename: job.filename,
+				},
 	};
 
 	await fsp.writeFile(
@@ -303,6 +381,9 @@ async function startNextConversion() {
 		if (job.kind === "segmentation") {
 			await runSegmentation(job);
 			job.progress = 0;
+		} else if (job.kind === "transformation") {
+			await runTransformation(job);
+			job.progress = 0;
 		}
 
 		job.status = "converting";
@@ -328,7 +409,14 @@ async function startNextConversion() {
 				`Cloud: ${job.name}`,
 				`Source file: ${job.filename}`,
 				`Operation: ${job.kind}`,
-				...(job.sourceCloud ? [`Parent cloud: ${job.sourceCloud}`, `Selection: ${job.mode}`] : []),
+				...(job.sourceCloud ? [`Parent cloud: ${job.sourceCloud}`] : []),
+				...(job.kind === "segmentation" ? [`Selection: ${job.mode}`] : []),
+				...(job.kind === "transformation" ? [
+					`Translation: ${JSON.stringify(job.transformation.translation)}`,
+					`Rotation XYZ [deg]: ${JSON.stringify(job.transformation.rotationDegrees)}`,
+					`Scale XYZ: ${JSON.stringify(job.transformation.scale)}`,
+					`Pivot: ${job.transformation.pivotMode} ${JSON.stringify(job.transformation.pivot)}`,
+				] : []),
 				`Started: ${new Date().toISOString()}`,
 				`Command: PotreeConverter.exe <source> -o <output> -m poisson`,
 				"",
@@ -376,6 +464,12 @@ async function startNextConversion() {
 		if (job.kind === "segmentation") {
 			await fsp.writeFile(
 				path.join(job.outputDir, "segmentation.log"),
+				`${job.log}\n`,
+				"utf8"
+			);
+		} else if (job.kind === "transformation") {
+			await fsp.writeFile(
+				path.join(job.outputDir, "transformation.log"),
 				`${job.log}\n`,
 				"utf8"
 			);
@@ -518,13 +612,13 @@ async function readJsonBody(request, maxBytes = 128 * 1024) {
 	}
 
 	if (receivedBytes === 0) {
-		throw new Error("Brak danych segmentacji.");
+		throw new Error("Brak danych żądania.");
 	}
 
 	try {
 		return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 	} catch {
-		throw new Error("Nieprawidłowy format danych segmentacji.");
+		throw new Error("Nieprawidłowy format danych JSON.");
 	}
 }
 
@@ -659,6 +753,115 @@ async function handleSegmentation(request, response) {
 	}
 }
 
+async function handleTransformation(request, response) {
+	if (!fs.existsSync(CONVERTER_EXE) || !fs.existsSync(LASZIP_DLL) || !fs.existsSync(TRANSFORMER_SCRIPT)) {
+		sendJson(response, 503, { error: "Lokalny silnik transformacji nie jest kompletny." });
+		return;
+	}
+
+	let body;
+	try {
+		body = await readJsonBody(request);
+	} catch (error) {
+		sendJson(response, 400, { error: error.message });
+		return;
+	}
+
+	try {
+		const requestedName = String(body.name || "").trim();
+		const slug = slugify(requestedName);
+		if (!slug) {
+			throw new Error("Podaj prawidłową nazwę chmury wynikowej.");
+		}
+
+		const sourceCloud = String(body.sourceCloud || "");
+		if (!sourceCloud || path.basename(sourceCloud) !== sourceCloud || [".", ".."].includes(sourceCloud)) {
+			throw new Error("Nieprawidłowa chmura źródłowa.");
+		}
+
+		const translation = normalizedVector(body.translation, 3, "Przesunięcie");
+		const rotationDegrees = normalizedVector(body.rotationDegrees, 3, "Obrót");
+		const scale = normalizedVector(body.scale, 3, "Skala");
+		if (scale.some(value => value <= 0 || value > 1_000_000_000)) {
+			throw new Error("Wartości skali muszą być większe od zera i nie większe niż 1 000 000 000.");
+		}
+
+		const pivotMode = String(body.pivotMode || "center");
+		if (!["center", "origin", "custom"].includes(pivotMode)) {
+			throw new Error("Wybierz prawidłowy punkt odniesienia transformacji.");
+		}
+		const pivot = normalizedVector(body.pivot || [0, 0, 0], 3, "Punkt obrotu");
+
+		const outputDir = path.join(POINTCLOUDS_DIR, slug);
+		if (!isPathInside(POINTCLOUDS_DIR, outputDir)) {
+			throw new Error("Nieprawidłowa nazwa chmury wynikowej.");
+		}
+		if (reservedCloudNames.has(slug) || fs.existsSync(outputDir)) {
+			sendJson(response, 409, { error: `Chmura o nazwie "${slug}" już istnieje.` });
+			return;
+		}
+
+		const sourceDir = path.join(POINTCLOUDS_DIR, sourceCloud);
+		if (!isPathInside(POINTCLOUDS_DIR, sourceDir)) {
+			throw new Error("Nieprawidłowa chmura źródłowa.");
+		}
+		const sourceStat = await fsp.stat(sourceDir).catch(() => null);
+		if (!sourceStat?.isDirectory()) {
+			throw new Error("Nie znaleziono katalogu chmury źródłowej.");
+		}
+
+		const sourceInfo = await readCloudInfo(sourceDir);
+		const sourcePath = await findSourceFile(sourceDir, sourceInfo);
+		if (!sourcePath) {
+			throw new Error("Chmura źródłowa nie ma zachowanego oryginalnego pliku LAS/LAZ.");
+		}
+
+		const id = crypto.randomUUID();
+		const workDir = path.join(JOBS_DIR, id);
+		const filename = `${slug}.laz`;
+		const inputPath = path.join(workDir, filename);
+		const now = new Date().toISOString();
+		const job = {
+			id,
+			kind: "transformation",
+			name: requestedName.slice(0, 120),
+			slug,
+			filename,
+			status: "queued",
+			uploadProgress: null,
+			progress: 0,
+			pointCloudUrl: null,
+			error: null,
+			log: "",
+			createdAt: now,
+			updatedAt: now,
+			workDir,
+			inputPath,
+			outputDir,
+			sourceCloud,
+			sourcePath,
+			transformation: {
+				translation,
+				rotationDegrees,
+				rotationOrder: "XYZ",
+				scale,
+				pivotMode,
+				pivot,
+			},
+			transformationResult: null,
+		};
+
+		await fsp.mkdir(workDir, { recursive: true });
+		jobs.set(id, job);
+		reservedCloudNames.add(slug);
+		conversionQueue.push(id);
+		sendJson(response, 202, publicJob(job));
+		setImmediate(startNextConversion);
+	} catch (error) {
+		sendJson(response, 400, { error: error.message });
+	}
+}
+
 async function handleApi(request, response, url) {
 	if (request.method === "GET" && url.pathname === "/api/health") {
 		const clouds = await listPointClouds();
@@ -666,6 +869,7 @@ async function handleApi(request, response, url) {
 			ok: true,
 			converterAvailable: fs.existsSync(CONVERTER_EXE),
 			segmentationAvailable: fs.existsSync(LASZIP_DLL) && fs.existsSync(SEGMENTER_SCRIPT),
+			transformationAvailable: fs.existsSync(LASZIP_DLL) && fs.existsSync(TRANSFORMER_SCRIPT),
 			activeJobId,
 			queuedJobs: conversionQueue.length,
 			cloudCount: clouds.length,
@@ -685,6 +889,11 @@ async function handleApi(request, response, url) {
 
 	if (request.method === "POST" && url.pathname === "/api/segmentations") {
 		await handleSegmentation(request, response);
+		return true;
+	}
+
+	if (request.method === "POST" && url.pathname === "/api/transformations") {
+		await handleTransformation(request, response);
 		return true;
 	}
 
@@ -831,11 +1040,15 @@ async function start() {
 	if (!fs.existsSync(LASZIP_DLL) || !fs.existsSync(SEGMENTER_SCRIPT)) {
 		console.warn("UWAGA: lokalny silnik segmentacji jest niedostępny.");
 	}
+	if (!fs.existsSync(LASZIP_DLL) || !fs.existsSync(TRANSFORMER_SCRIPT)) {
+		console.warn("UWAGA: lokalny silnik transformacji jest niedostępny.");
+	}
 
 	server.listen(PORT, HOST, () => {
 		console.log(`Cloud Transformation: http://localhost:${PORT}`);
 		console.log(`PotreeConverter: ${fs.existsSync(CONVERTER_EXE) ? "gotowy" : "niedostępny"}`);
 		console.log(`Segmentacja LAS/LAZ: ${fs.existsSync(LASZIP_DLL) && fs.existsSync(SEGMENTER_SCRIPT) ? "gotowa" : "niedostępna"}`);
+		console.log(`Transformacje LAS/LAZ: ${fs.existsSync(LASZIP_DLL) && fs.existsSync(TRANSFORMER_SCRIPT) ? "gotowe" : "niedostępne"}`);
 	});
 }
 

@@ -79,6 +79,34 @@ Katalog wynikowy zawiera:
 Chmury bez oryginalnego LAS/LAZ nadal można wyświetlać, ale przycisk
 segmentacji będzie dla nich nieaktywny.
 
+## Transformacje współrzędnych
+
+Transformacje działają lokalnie bez PDAL. Skrypt
+`tools/transform_pointcloud.py` odczytuje i zapisuje punkty przez dołączoną
+bibliotekę `laszip.dll`, dlatego zachowuje atrybuty punktów oraz obsługuje pliki
+LAS i LAZ.
+
+1. Wczytaj chmurę, która ma zachowany plik źródłowy LAS/LAZ.
+2. Otwórz panel `Chmury i przetwarzanie`.
+3. W sekcji `Transformuj chmurę` wpisz przesunięcie XYZ, obrót XYZ w stopniach
+   oraz skalę XYZ.
+4. Wybierz punkt odniesienia: środek granic chmury, początek układu albo własne
+   współrzędne.
+5. Podaj unikalną nazwę wyniku i kliknij `Transformuj i przekonwertuj`.
+
+Obroty są wykonywane kolejno wokół osi X, Y i Z. Serwer wykonuje dwa przebiegi
+po punktach: najpierw oblicza nowe granice i bezpieczny offset nagłówka LAS,
+a następnie zapisuje przeliczone współrzędne do nowego LAZ. Oryginalna chmura
+nie jest modyfikowana.
+
+Katalog wynikowy zawiera wynikowy LAZ, dane Potree, `transformation.log`,
+`conversion.log` oraz `cloud-info.json`. W metadanych zachowywane są parametry,
+rzeczywisty punkt odniesienia, granice wejściowe i wynikowe, skala zapisu,
+offset oraz powiązanie z chmurą źródłową.
+
+Ta operacja jest transformacją liczbową w bieżącym układzie współrzędnych. Nie
+wykonuje reprojekcji pomiędzy układami geodezyjnymi, np. PL-2000 i WGS84.
+
 ## Ręczna podmiana chmury punktów
 
 1. Umieść przekonwertowaną chmurę w katalogu `pointclouds`.
@@ -94,7 +122,7 @@ PotreeConverter 2.x plik `metadata.json`.
 
 ## Polecenia
 
-- `npm.cmd start` — uruchamia lokalny viewer, upload, segmentację i kolejkę
+- `npm.cmd start` — uruchamia lokalny viewer, upload, segmentację, transformacje i kolejkę
   PotreeConvertera.
 - `npm.cmd run build` — przebudowuje bibliotekę Potree.
 - `npm.cmd run dev` — przebudowuje bibliotekę i obserwuje jej pliki źródłowe; serwer uruchom osobno przez `npm.cmd start`.

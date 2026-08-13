@@ -142,6 +142,7 @@
 		}
 
 		input[type="text"],
+		input[type="number"],
 		input[type="file"],
 		select {
 			box-sizing: border-box;
@@ -206,7 +207,8 @@
 		}
 
 		#import_progress,
-		#segment_progress {
+		#segment_progress,
+		#transform_progress {
 			width: 100%;
 			height: 0.7rem;
 			margin-top: 0.8rem;
@@ -214,7 +216,8 @@
 		}
 
 		#import_status,
-		#segment_status {
+		#segment_status,
+		#transform_status {
 			min-height: 1.2rem;
 			margin: 0.5rem 0 0;
 			color: #cbd7e2;
@@ -223,12 +226,14 @@
 		}
 
 		#import_status[data-kind="error"],
-		#segment_status[data-kind="error"] {
+		#segment_status[data-kind="error"],
+		#transform_status[data-kind="error"] {
 			color: #ff9d9d;
 		}
 
 		#import_log,
-		#segment_log {
+		#segment_log,
+		#transform_log {
 			max-height: 9rem;
 			overflow: auto;
 			margin: 0.55rem 0 0;
@@ -255,6 +260,36 @@
 			color: #cbd7e2;
 			font-size: 0.82rem;
 			line-height: 1.4;
+		}
+
+		.vector-grid {
+			display: grid;
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			gap: 0.45rem;
+		}
+
+		.vector-field {
+			display: grid;
+			gap: 0.25rem;
+		}
+
+		.vector-field span {
+			color: #93a3b2;
+			font-size: 0.72rem;
+			text-align: center;
+		}
+
+		.vector-field input {
+			box-sizing: border-box;
+			width: 100%;
+			min-width: 0;
+			min-height: 2.35rem;
+			padding: 0.5rem;
+			border: 1px solid #465565;
+			border-radius: 0.45rem;
+			background: #111820;
+			color: #f4f7fa;
+			text-align: right;
 		}
 
 		@media (max-width: 640px) {
@@ -290,7 +325,7 @@
 	<div id="viewer_status">Wczytywanie chmury punktów…</div>
 
 	<button id="import_toggle" type="button" aria-controls="import_panel" aria-expanded="false">
-		Chmury i segmentacja
+		Chmury i przetwarzanie
 	</button>
 
 	<aside id="import_panel" aria-label="Import chmury punktów" hidden>
@@ -372,6 +407,76 @@
 				<pre id="segment_log"></pre>
 			</details>
 		</form>
+
+		<hr class="panel-divider">
+
+		<form id="transform_form">
+			<div class="section-label">Transformuj chmurę</div>
+			<p id="transform_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
+
+			<div class="form-group">
+				<label>Przesunięcie XYZ</label>
+				<div class="vector-grid">
+					<label class="vector-field"><span>X</span><input id="translate_x" type="number" value="0" step="any" required></label>
+					<label class="vector-field"><span>Y</span><input id="translate_y" type="number" value="0" step="any" required></label>
+					<label class="vector-field"><span>Z</span><input id="translate_z" type="number" value="0" step="any" required></label>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label>Obrót XYZ w stopniach</label>
+				<div class="vector-grid">
+					<label class="vector-field"><span>X°</span><input id="rotate_x" type="number" value="0" step="any" required></label>
+					<label class="vector-field"><span>Y°</span><input id="rotate_y" type="number" value="0" step="any" required></label>
+					<label class="vector-field"><span>Z°</span><input id="rotate_z" type="number" value="0" step="any" required></label>
+				</div>
+				<p class="helper-text">Obroty są wykonywane kolejno wokół osi X, Y i Z.</p>
+			</div>
+
+			<div class="form-group">
+				<label>Skala XYZ</label>
+				<div class="vector-grid">
+					<label class="vector-field"><span>X</span><input id="scale_x" type="number" value="1" min="0.000000001" step="any" required></label>
+					<label class="vector-field"><span>Y</span><input id="scale_y" type="number" value="1" min="0.000000001" step="any" required></label>
+					<label class="vector-field"><span>Z</span><input id="scale_z" type="number" value="1" min="0.000000001" step="any" required></label>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="pivot_mode">Punkt odniesienia obrotu i skali</label>
+				<select id="pivot_mode">
+					<option value="center">Środek granic chmury</option>
+					<option value="origin">Początek układu (0, 0, 0)</option>
+					<option value="custom">Własne współrzędne</option>
+				</select>
+			</div>
+
+			<div id="custom_pivot_group" class="form-group" hidden>
+				<label>Własny punkt odniesienia XYZ</label>
+				<div class="vector-grid">
+					<label class="vector-field"><span>X</span><input id="pivot_x" type="number" value="0" step="any" required></label>
+					<label class="vector-field"><span>Y</span><input id="pivot_y" type="number" value="0" step="any" required></label>
+					<label class="vector-field"><span>Z</span><input id="pivot_z" type="number" value="0" step="any" required></label>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label for="transform_name">Nazwa wynikowej chmury i pliku LAZ</label>
+				<input id="transform_name" name="transformName" type="text" maxlength="120" required>
+			</div>
+
+			<button id="transform_button" class="primary-button" type="submit" style="width: 100%; margin-top: 0.85rem;">
+				Transformuj i przekonwertuj
+			</button>
+
+			<progress id="transform_progress" max="100" value="0"></progress>
+			<p id="transform_status" role="status">Wpisz parametry i nazwę nowej chmury.</p>
+			<p class="helper-text">Oryginalna chmura pozostanie bez zmian.</p>
+			<details id="transform_log_details" hidden>
+				<summary>Szczegóły transformacji i konwersji</summary>
+				<pre id="transform_log"></pre>
+			</details>
+		</form>
 	</aside>
 
 	<div class="potree_container" style="position: absolute; width: 100%; height: 100%; left: 0; top: 0;">
@@ -414,6 +519,16 @@
 		const segmentStatus = document.getElementById("segment_status");
 		const segmentLog = document.getElementById("segment_log");
 		const segmentLogDetails = document.getElementById("segment_log_details");
+		const transformForm = document.getElementById("transform_form");
+		const transformSource = document.getElementById("transform_source");
+		const transformName = document.getElementById("transform_name");
+		const transformButton = document.getElementById("transform_button");
+		const transformProgress = document.getElementById("transform_progress");
+		const transformStatus = document.getElementById("transform_status");
+		const transformLog = document.getElementById("transform_log");
+		const transformLogDetails = document.getElementById("transform_log_details");
+		const pivotMode = document.getElementById("pivot_mode");
+		const customPivotGroup = document.getElementById("custom_pivot_group");
 		const renderArea = document.getElementById("potree_render_area");
 
 		const viewer = new Potree.Viewer(renderArea);
@@ -423,6 +538,7 @@
 		let availableClouds = [];
 		let clippingBoxes = [];
 		let segmentationEngineAvailable = true;
+		let transformationEngineAvailable = true;
 		window.viewer = viewer;
 
 		viewer.setEDLEnabled(true);
@@ -455,6 +571,11 @@
 		function setSegmentStatus(message, kind = "info") {
 			segmentStatus.textContent = message;
 			segmentStatus.dataset.kind = kind;
+		}
+
+		function setTransformStatus(message, kind = "info") {
+			transformStatus.textContent = message;
+			transformStatus.dataset.kind = kind;
 		}
 
 		function refreshClippingBoxes() {
@@ -497,6 +618,28 @@
 					setSegmentStatus("Dodaj i ustaw clipping box w widoku.");
 				} else if (segmentStatus.dataset.kind === "error") {
 					setSegmentStatus("Ustaw clipping box, wybierz tryb i nazwę wyniku.");
+				}
+			}
+
+			updateTransformationControls();
+		}
+
+		function updateTransformationControls() {
+			const hasSource = Boolean(activeCloud?.sourceAvailable);
+			transformButton.disabled = !transformationEngineAvailable || !hasSource;
+
+			if (!transformationEngineAvailable) {
+				transformSource.textContent = "Lokalny silnik transformacji jest niedostępny.";
+				setTransformStatus("Sprawdź plik tools/transform_pointcloud.py i bibliotekę LASzip.", "error");
+			} else if (!activeCloud) {
+				transformSource.textContent = "Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.";
+			} else if (!hasSource) {
+				transformSource.textContent = `Chmura „${activeCloud.name}” nie ma oryginalnego pliku LAS/LAZ.`;
+				setTransformStatus("Transformacja tej chmury wymaga uzupełnienia pliku źródłowego.", "error");
+			} else {
+				transformSource.textContent = `Źródło: ${activeCloud.name} (${activeCloud.sourceFile})`;
+				if (transformStatus.dataset.kind === "error") {
+					setTransformStatus("Wpisz parametry i nazwę nowej chmury.");
 				}
 			}
 		}
@@ -760,6 +903,97 @@
 			}
 		}
 
+		function inputVector(ids, label) {
+			const fields = ids.map(id => document.getElementById(id));
+			if (fields.some(field => field.value.trim() === "")) {
+				throw new Error(`${label} musi zawierać trzy prawidłowe liczby.`);
+			}
+			const values = fields.map(field => Number(field.value));
+			if (!values.every(Number.isFinite)) {
+				throw new Error(`${label} musi zawierać trzy prawidłowe liczby.`);
+			}
+			return values;
+		}
+
+		function buildTransformationPayload(name) {
+			if (!activeCloud) {
+				throw new Error("Wczytaj chmurę źródłową.");
+			}
+			if (!activeCloud.sourceAvailable) {
+				throw new Error("Aktywna chmura nie ma zachowanego pliku LAS/LAZ.");
+			}
+
+			const translation = inputVector(["translate_x", "translate_y", "translate_z"], "Przesunięcie");
+			const rotationDegrees = inputVector(["rotate_x", "rotate_y", "rotate_z"], "Obrót");
+			const scale = inputVector(["scale_x", "scale_y", "scale_z"], "Skala");
+			if (scale.some(value => value <= 0)) {
+				throw new Error("Wartości skali muszą być większe od zera.");
+			}
+
+			return {
+				name,
+				sourceCloud: activeCloud.slug,
+				translation,
+				rotationDegrees,
+				scale,
+				pivotMode: pivotMode.value,
+				pivot: inputVector(["pivot_x", "pivot_y", "pivot_z"], "Punkt odniesienia"),
+			};
+		}
+
+		async function createTransformation(payload) {
+			const response = await fetch("/api/transformations", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const result = await response.json().catch(() => ({}));
+			if (response.status !== 202) {
+				throw new Error(result.error || "Nie udało się rozpocząć transformacji.");
+			}
+			return result;
+		}
+
+		async function waitForTransformation(jobId) {
+			while (true) {
+				const response = await fetch(`/api/conversions/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+				if (!response.ok) {
+					throw new Error("Nie udało się odczytać stanu transformacji.");
+				}
+
+				const job = await response.json();
+				transformLog.textContent = job.log || "";
+				transformLogDetails.hidden = !job.log;
+
+				if (job.status === "queued") {
+					transformProgress.removeAttribute("value");
+					setTransformStatus("Zadanie oczekuje w lokalnej kolejce…");
+				} else if (job.status === "transforming") {
+					transformProgress.value = job.progress || 0;
+					setTransformStatus(`Przeliczanie współrzędnych: ${Math.round(job.progress || 0)}%`);
+				} else if (job.status === "converting") {
+					if (job.progress > 0) {
+						transformProgress.value = job.progress;
+						setTransformStatus(`Konwersja Potree: ${Math.round(job.progress)}% bieżącego etapu`);
+					} else {
+						transformProgress.removeAttribute("value");
+						setTransformStatus("PotreeConverter przygotowuje wynik do wyświetlenia…");
+					}
+				} else if (job.status === "completed") {
+					transformProgress.value = 100;
+					return job;
+				} else if (job.status === "failed") {
+					throw new Error(job.error || "Transformacja nie powiodła się.");
+				}
+
+				await new Promise(resolve => window.setTimeout(resolve, 1000));
+			}
+		}
+
+		function updatePivotControls() {
+			customPivotGroup.hidden = pivotMode.value !== "custom";
+		}
+
 		importToggle.addEventListener("click", () => setPanelOpen(true));
 		importClose.addEventListener("click", () => setPanelOpen(false));
 		viewer.scene.addEventListener("volume_added", refreshClippingBoxes);
@@ -777,6 +1011,8 @@
 				? Potree.ClipTask.SHOW_INSIDE
 				: Potree.ClipTask.SHOW_OUTSIDE);
 		});
+
+		pivotMode.addEventListener("change", updatePivotControls);
 
 		cloudFile.addEventListener("change", () => {
 			const file = cloudFile.files[0];
@@ -877,6 +1113,44 @@
 			}
 		});
 
+		transformForm.addEventListener("submit", async event => {
+			event.preventDefault();
+			const name = transformName.value.trim();
+			if (!name) {
+				setTransformStatus("Podaj nazwę wynikowej chmury.", "error");
+				return;
+			}
+
+			const controls = [...transformForm.querySelectorAll("input, select, button")];
+			controls.forEach(control => { control.disabled = true; });
+			transformProgress.value = 0;
+			transformLog.textContent = "";
+			transformLogDetails.hidden = true;
+			setTransformStatus("Przygotowywanie lokalnej transformacji…");
+
+			try {
+				const payload = buildTransformationPayload(name);
+				const queuedJob = await createTransformation(payload);
+				const completedJob = await waitForTransformation(queuedJob.id);
+				await refreshCloudList();
+				cloudList.value = completedJob.pointCloudUrl;
+				await loadPointCloud(completedJob.pointCloudUrl, completedJob.name);
+				const outputPoints = completedJob.transformationResult?.outputPoints;
+				transformForm.reset();
+				updatePivotControls();
+				setTransformStatus(outputPoints == null
+					? "Gotowe. Transformowana chmura została zapisana i wczytana."
+					: `Gotowe. Przeliczono ${outputPoints.toLocaleString("pl-PL")} punktów.`);
+			} catch (error) {
+				transformProgress.value = 0;
+				setTransformStatus(error.message, "error");
+			} finally {
+				controls.forEach(control => { control.disabled = false; });
+				updatePivotControls();
+				transformButton.disabled = !transformationEngineAvailable || !activeCloud?.sourceAvailable;
+			}
+		});
+
 		async function initialize() {
 			try {
 				const healthResponse = await fetch("/api/health", { cache: "no-store" });
@@ -886,6 +1160,7 @@
 					setImportStatus("Nie znaleziono tools/PotreeConverter/PotreeConverter.exe.", "error");
 				}
 				segmentationEngineAvailable = health.segmentationAvailable !== false;
+				transformationEngineAvailable = health.transformationAvailable !== false;
 				updateSegmentationControls();
 
 				const clouds = await refreshCloudList();
@@ -907,6 +1182,7 @@
 		});
 
 		refreshClippingBoxes();
+		updatePivotControls();
 		initialize();
 	</script>
 </body>
