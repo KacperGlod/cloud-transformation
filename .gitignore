@@ -4,6 +4,7 @@
 /360
 node_modules
 .runtime/
+/pointclouds/
 __pycache__/
 *.py[cod]
 docs/.marking_your_own_pointcloud_loader.md.html
