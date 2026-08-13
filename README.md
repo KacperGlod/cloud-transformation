@@ -45,6 +45,10 @@ PotreeConverter zapisuje wynik w `pointclouds/<nazwa>/`, a viewer automatycznie
 wczytuje wygenerowany plik `metadata.json`. Konwersje wykonywane są pojedynczo,
 aby nie przeciążać komputera.
 
+Po udanej konwersji katalog chmury zawiera również oryginalny plik LAS/LAZ
+pod jego pierwotną nazwą oraz pełny zapis działania PotreeConvertera w pliku
+`conversion.log`.
+
 ## Ręczna podmiana chmury punktów
 
 1. Umieść przekonwertowaną chmurę w katalogu `pointclouds`.

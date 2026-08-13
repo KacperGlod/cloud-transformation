@@ -171,6 +171,8 @@ async function startNextConversion() {
 		outputCreated = true;
 
 		await new Promise((resolve, reject) => {
+			const logPath = path.join(job.outputDir, "conversion.log");
+			const logStream = fs.createWriteStream(logPath, { flags: "wx" });
 			const converter = spawn(
 				CONVERTER_EXE,
 				[job.inputPath, "-o", job.outputDir, "-m", "poisson"],
@@ -182,16 +184,39 @@ async function startNextConversion() {
 			);
 
 			activeConverter = converter;
-			converter.stdout.on("data", chunk => appendJobLog(job, chunk));
-			converter.stderr.on("data", chunk => appendJobLog(job, chunk));
-			converter.once("error", reject);
+			logStream.write([
+				`Cloud: ${job.name}`,
+				`Source file: ${job.filename}`,
+				`Started: ${new Date().toISOString()}`,
+				`Command: PotreeConverter.exe <source> -o <output> -m poisson`,
+				"",
+			].join("\n"));
+
+			const onOutput = chunk => {
+				appendJobLog(job, chunk);
+				logStream.write(chunk);
+			};
+
+			converter.stdout.on("data", onOutput);
+			converter.stderr.on("data", onOutput);
+			converter.once("error", error => {
+				logStream.destroy();
+				reject(error);
+			});
+			logStream.once("error", error => {
+				converter.kill();
+				reject(error);
+			});
 			converter.once("close", code => {
 				activeConverter = null;
-				if (code === 0) {
-					resolve();
-				} else {
-					reject(new Error(`PotreeConverter zakończył pracę z kodem ${code}.`));
-				}
+				logStream.end(`\nFinished: ${new Date().toISOString()}\nExit code: ${code}\n`);
+				logStream.once("finish", () => {
+					if (code === 0) {
+						resolve();
+					} else {
+						reject(new Error(`PotreeConverter zakończył pracę z kodem ${code}.`));
+					}
+				});
 			});
 		});
 
@@ -199,6 +224,12 @@ async function startNextConversion() {
 		if (!fs.existsSync(metadataPath)) {
 			throw new Error("Konwerter nie utworzył pliku metadata.json.");
 		}
+
+		const originalFilePath = path.join(job.outputDir, job.filename);
+		if (!isPathInside(job.outputDir, originalFilePath)) {
+			throw new Error("Nieprawidłowa nazwa oryginalnego pliku.");
+		}
+		await fsp.rename(job.inputPath, originalFilePath);
 
 		job.status = "completed";
 		job.progress = 100;
