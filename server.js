@@ -25,6 +25,8 @@ const HOST = process.env.HOST || "::1";
 const PORT = Number(process.env.PORT || 1234);
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 100 * 1024 ** 3);
 const MAX_LOG_LENGTH = 60_000;
+const POTREE_HIERARCHY_RECORD_BYTES = 22;
+const MIN_CONVERSION_RESERVE_BYTES = 1024n ** 3n;
 
 const jobs = new Map();
 const conversionQueue = [];
@@ -95,11 +97,28 @@ function appendJobLog(job, chunk) {
 	job.log = `${job.log}${text}`.slice(-MAX_LOG_LENGTH);
 	job.updatedAt = new Date().toISOString();
 
-	const percentages = [...text.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
-	if (percentages.length > 0) {
-		const value = Number(percentages.at(-1)[1]);
+	const progressText = `${job.progressParseBuffer || ""}${text}`;
+	job.progressParseBuffer = progressText.slice(-2048);
+
+	let pattern;
+	if (job.status === "converting") {
+		// Example: [44%, 23s], [DISTRIBUTING: 32%, ...][..., CPU: 35%]
+		// The first value is the progress of the complete Potree conversion.
+		pattern = /(?:^|[\r\n])\s*\[(\d+(?:\.\d+)?)%\s*,/g;
+	} else if (job.status === "segmenting") {
+		pattern = /(?:^|[\r\n])\s*Segmentacja:\s*(\d+(?:\.\d+)?)%/g;
+	} else if (job.status === "transforming") {
+		pattern = /(?:^|[\r\n])\s*(?:Analiza|Zapisywanie) transformacji:\s*(\d+(?:\.\d+)?)%/g;
+	} else if (job.status === "removing") {
+		pattern = /(?:^|[\r\n])\s*Usuwanie punktów:\s*(\d+(?:\.\d+)?)%/g;
+	}
+
+	const matches = pattern ? [...progressText.matchAll(pattern)] : [];
+	if (matches.length > 0) {
+		const value = Number(matches.at(-1)[1]);
 		if (Number.isFinite(value)) {
-			job.progress = Math.max(0, Math.min(100, value));
+			const normalized = Math.max(0, Math.min(100, value));
+			job.progress = Math.max(job.progress || 0, normalized);
 		}
 	}
 }
@@ -151,6 +170,139 @@ async function findSourceFile(directory, cloudInfo = null) {
 	return source ? path.join(directory, source.name) : null;
 }
 
+function formatBytes(value) {
+	const bytes = typeof value === "bigint" ? Number(value) : Number(value);
+	if (!Number.isFinite(bytes) || bytes < 0) {
+		return "nieznany rozmiar";
+	}
+
+	const units = ["B", "KB", "MB", "GB", "TB"];
+	let amount = bytes;
+	let unit = 0;
+	while (amount >= 1024 && unit < units.length - 1) {
+		amount /= 1024;
+		unit++;
+	}
+
+	return `${amount.toLocaleString("pl-PL", { maximumFractionDigits: 2 })} ${units[unit]}`;
+}
+
+async function readLasStorageEstimate(filePath) {
+	const handle = await fsp.open(filePath, "r");
+	try {
+		const header = Buffer.alloc(375);
+		const { bytesRead } = await handle.read(header, 0, header.length, 0);
+		if (bytesRead < 227 || header.toString("ascii", 0, 4) !== "LASF") {
+			return null;
+		}
+
+		const pointRecordLength = header.readUInt16LE(105);
+		let pointCount = BigInt(header.readUInt32LE(107));
+		const versionMajor = header.readUInt8(24);
+		const versionMinor = header.readUInt8(25);
+		const headerSize = header.readUInt16LE(94);
+		const hasLas14PointCount = versionMajor === 1 && versionMinor >= 4 && headerSize >= 375;
+		if (hasLas14PointCount && bytesRead >= 255) {
+			const extendedPointCount = header.readBigUInt64LE(247);
+			if (extendedPointCount > 0n) {
+				pointCount = extendedPointCount;
+			}
+		}
+
+		if (pointRecordLength === 0 || pointCount === 0n) {
+			return null;
+		}
+
+		return pointCount * BigInt(pointRecordLength);
+	} finally {
+		await handle.close();
+	}
+}
+
+async function ensureConversionDiskSpace(inputPath) {
+	const estimatedOctreeBytes = await readLasStorageEstimate(inputPath);
+	if (estimatedOctreeBytes === null || typeof fsp.statfs !== "function") {
+		return;
+	}
+
+	let availableBytes;
+	try {
+		const disk = await fsp.statfs(POINTCLOUDS_DIR, { bigint: true });
+		availableBytes = disk.bavail * disk.bsize;
+	} catch {
+		return;
+	}
+
+	const proportionalReserve = estimatedOctreeBytes / 4n;
+	const reserveBytes = proportionalReserve > MIN_CONVERSION_RESERVE_BYTES
+		? proportionalReserve
+		: MIN_CONVERSION_RESERVE_BYTES;
+	const requiredBytes = estimatedOctreeBytes + reserveBytes;
+
+	if (availableBytes < requiredBytes) {
+		throw new Error(
+			`Za mało wolnego miejsca na konwersję. Dostępne: ${formatBytes(availableBytes)}; `
+			+ `szacowane minimum: ${formatBytes(requiredBytes)}. Zwolnij miejsce na dysku i spróbuj ponownie.`
+		);
+	}
+}
+
+async function validatePotree2Output(directory) {
+	const metadataPath = path.join(directory, "metadata.json");
+	const hierarchyPath = path.join(directory, "hierarchy.bin");
+	const octreePath = path.join(directory, "octree.bin");
+	const metadata = JSON.parse(await fsp.readFile(metadataPath, "utf8"));
+
+	if (metadata.version !== "2.0") {
+		return;
+	}
+
+	const [hierarchy, hierarchyStat, octreeStat] = await Promise.all([
+		fsp.readFile(hierarchyPath),
+		fsp.stat(hierarchyPath, { bigint: true }),
+		fsp.stat(octreePath, { bigint: true }),
+	]);
+
+	if (hierarchy.length === 0 || hierarchy.length % POTREE_HIERARCHY_RECORD_BYTES !== 0) {
+		throw new Error("Plik hierarchy.bin ma nieprawidłowy rozmiar.");
+	}
+
+	const firstChunkSize = Number(metadata.hierarchy?.firstChunkSize);
+	if (!Number.isInteger(firstChunkSize) || firstChunkSize <= 0 || firstChunkSize > hierarchy.length) {
+		throw new Error("Metadane wskazują nieprawidłowy pierwszy fragment hierarchii.");
+	}
+
+	let requiredOctreeBytes = 0n;
+	let requiredHierarchyBytes = BigInt(firstChunkSize);
+	for (let offset = 0; offset < hierarchy.length; offset += POTREE_HIERARCHY_RECORD_BYTES) {
+		const nodeType = hierarchy.readUInt8(offset);
+		const byteOffset = hierarchy.readBigInt64LE(offset + 6);
+		const byteSize = hierarchy.readBigInt64LE(offset + 14);
+		if (byteOffset < 0n || byteSize < 0n) {
+			throw new Error("Hierarchia Potree zawiera ujemny zakres danych.");
+		}
+
+		const end = byteOffset + byteSize;
+		if (nodeType === 2) {
+			requiredHierarchyBytes = end > requiredHierarchyBytes ? end : requiredHierarchyBytes;
+		} else {
+			requiredOctreeBytes = end > requiredOctreeBytes ? end : requiredOctreeBytes;
+		}
+	}
+
+	if (requiredHierarchyBytes > hierarchyStat.size) {
+		const missingBytes = requiredHierarchyBytes - hierarchyStat.size;
+		throw new Error(`Plik hierarchy.bin jest niekompletny. Brakuje ${formatBytes(missingBytes)}.`);
+	}
+	if (requiredOctreeBytes > octreeStat.size) {
+		const missingBytes = requiredOctreeBytes - octreeStat.size;
+		throw new Error(
+			`Plik octree.bin jest niekompletny. Brakuje ${formatBytes(missingBytes)}. `
+			+ "Najczęstszą przyczyną jest brak wolnego miejsca podczas konwersji."
+		);
+	}
+}
+
 async function listPointClouds() {
 	await fsp.mkdir(POINTCLOUDS_DIR, { recursive: true });
 	const entries = await fsp.readdir(POINTCLOUDS_DIR, { withFileTypes: true });
@@ -175,6 +327,14 @@ async function listPointClouds() {
 		if (entryFile) {
 			const cloudInfo = await readCloudInfo(directory);
 			const sourceFile = await findSourceFile(directory, cloudInfo);
+			let validationError = null;
+			if (entryFile === "metadata.json") {
+				try {
+					await validatePotree2Output(directory);
+				} catch (error) {
+					validationError = error.message;
+				}
+			}
 			clouds.push({
 				name: cloudInfo?.name || entry.name,
 				slug: entry.name,
@@ -184,6 +344,8 @@ async function listPointClouds() {
 				sourceFile: sourceFile ? path.basename(sourceFile) : null,
 				parentCloud: cloudInfo?.parentCloud || null,
 				operation: cloudInfo?.operation || null,
+				valid: validationError === null,
+				validationError,
 			});
 		}
 	}
@@ -469,6 +631,7 @@ async function startNextConversion() {
 
 		job.status = "converting";
 		job.updatedAt = new Date().toISOString();
+		await ensureConversionDiskSpace(job.inputPath);
 		await fsp.mkdir(job.outputDir, { recursive: false });
 		outputCreated = true;
 
@@ -538,6 +701,8 @@ async function startNextConversion() {
 		if (!fs.existsSync(metadataPath)) {
 			throw new Error("Konwerter nie utworzył pliku metadata.json.");
 		}
+
+		await validatePotree2Output(job.outputDir);
 
 		const originalFilePath = path.join(job.outputDir, job.filename);
 		if (!isPathInside(job.outputDir, originalFilePath)) {

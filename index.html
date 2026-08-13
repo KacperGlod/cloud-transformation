@@ -1027,7 +1027,7 @@
 				} else if (job.status === "converting") {
 					if (job.progress > 0) {
 						importProgress.value = job.progress;
-						setImportStatus(`Konwersja: ${Math.round(job.progress)}% bieżącego etapu`);
+						setImportStatus(`Konwersja Potree: ${Math.round(job.progress)}%`);
 					} else {
 						importProgress.removeAttribute("value");
 						setImportStatus("PotreeConverter przetwarza chmurę…");
@@ -1122,7 +1122,7 @@
 				} else if (job.status === "converting") {
 					if (job.progress > 0) {
 						segmentProgress.value = job.progress;
-						setSegmentStatus(`Konwersja Potree: ${Math.round(job.progress)}% bieżącego etapu`);
+						setSegmentStatus(`Konwersja Potree: ${Math.round(job.progress)}%`);
 					} else {
 						segmentProgress.removeAttribute("value");
 						setSegmentStatus("PotreeConverter przygotowuje wynik do wyświetlenia…");
@@ -1209,7 +1209,7 @@
 				} else if (job.status === "converting") {
 					if (job.progress > 0) {
 						transformProgress.value = job.progress;
-						setTransformStatus(`Konwersja Potree: ${Math.round(job.progress)}% bieżącego etapu`);
+						setTransformStatus(`Konwersja Potree: ${Math.round(job.progress)}%`);
 					} else {
 						transformProgress.removeAttribute("value");
 						setTransformStatus("PotreeConverter przygotowuje wynik do wyświetlenia…");
@@ -1279,7 +1279,7 @@
 				} else if (job.status === "converting") {
 					if (job.progress > 0) {
 						pointRemovalProgress.value = job.progress;
-						setPointRemovalStatus(`Konwersja Potree: ${Math.round(job.progress)}% bieżącego etapu`);
+						setPointRemovalStatus(`Konwersja Potree: ${Math.round(job.progress)}%`);
 					} else {
 						pointRemovalProgress.removeAttribute("value");
 						setPointRemovalStatus("PotreeConverter przygotowuje wynik do wyświetlenia…");
