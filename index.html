@@ -206,6 +206,100 @@
 			border-top: 1px solid rgba(255, 255, 255, 0.12);
 		}
 
+		.operation-section {
+			margin-top: 0.65rem;
+			overflow: hidden;
+			border: 1px solid rgba(255, 255, 255, 0.12);
+			border-radius: 0.55rem;
+			background: rgba(255, 255, 255, 0.025);
+			transition: border-color 180ms ease, background-color 180ms ease;
+		}
+
+		.operation-section:hover {
+			border-color: rgba(255, 255, 255, 0.2);
+		}
+
+		.operation-section.is-expanded {
+			border-color: rgba(77, 163, 255, 0.42);
+			background: rgba(77, 163, 255, 0.045);
+		}
+
+		.operation-section-toggle {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 0.75rem;
+			width: 100%;
+			min-height: 2.85rem;
+			padding: 0.7rem 0.8rem;
+			border: 0;
+			background: transparent;
+			color: #dbe5ee;
+			font-size: 0.82rem;
+			font-weight: 650;
+			letter-spacing: 0.025em;
+			text-align: left;
+			text-transform: uppercase;
+			cursor: pointer;
+		}
+
+		.operation-section-toggle:hover,
+		.operation-section-toggle:focus-visible {
+			background: rgba(255, 255, 255, 0.065);
+		}
+
+		.operation-section-toggle:focus-visible {
+			outline: 2px solid rgba(77, 163, 255, 0.85);
+			outline-offset: -2px;
+		}
+
+		.operation-section-toggle::after {
+			content: "";
+			flex: 0 0 auto;
+			width: 0.55rem;
+			height: 0.55rem;
+			margin-right: 0.2rem;
+			border-right: 2px solid #8fb8df;
+			border-bottom: 2px solid #8fb8df;
+			transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+			transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+		}
+
+		.operation-section.is-expanded .operation-section-toggle::after {
+			transform: rotate(225deg) translate(-0.05rem, -0.05rem);
+		}
+
+		.operation-section-body {
+			display: grid;
+			grid-template-rows: 0fr;
+			opacity: 0;
+			visibility: hidden;
+			pointer-events: none;
+			transition:
+				grid-template-rows 280ms cubic-bezier(0.22, 1, 0.36, 1),
+				opacity 180ms ease,
+				visibility 0s linear 280ms;
+		}
+
+		.operation-section-body-inner {
+			min-height: 0;
+			overflow: hidden;
+			padding: 0 0.8rem;
+			transition: padding-bottom 280ms cubic-bezier(0.22, 1, 0.36, 1);
+		}
+
+		.operation-section.is-expanded .operation-section-body {
+			grid-template-rows: 1fr;
+			opacity: 1;
+			visibility: visible;
+			pointer-events: auto;
+			transition-delay: 0s;
+		}
+
+		.operation-section.is-expanded .operation-section-body-inner {
+			padding-bottom: 0.85rem;
+		}
+
 		#import_progress,
 		#segment_progress,
 		#transform_progress,
@@ -321,6 +415,15 @@
 			cursor: crosshair !important;
 		}
 
+		@media (prefers-reduced-motion: reduce) {
+			.operation-section,
+			.operation-section-toggle::after,
+			.operation-section-body,
+			.operation-section-body-inner {
+				transition: none;
+			}
+		}
+
 		@media (max-width: 640px) {
 			#import_toggle {
 				top: 0.65rem;
@@ -374,36 +477,54 @@
 
 		<hr class="panel-divider">
 
-		<form id="import_form">
-			<div class="section-label">Przekonwertuj nową</div>
-
-			<div class="form-group">
-				<label for="cloud_file">Plik LAS lub LAZ</label>
-				<input id="cloud_file" name="cloudFile" type="file" accept=".las,.laz" required>
-			</div>
-
-			<div class="form-group">
-				<label for="cloud_name">Nazwa chmury</label>
-				<input id="cloud_name" name="cloudName" type="text" maxlength="120" required>
-			</div>
-
-			<button id="convert_button" class="primary-button" type="submit" style="width: 100%; margin-top: 0.85rem;">
-				Prześlij i konwertuj
+		<form id="import_form" class="operation-section">
+			<button
+				class="operation-section-toggle"
+				type="button"
+				aria-controls="import_section_body"
+				aria-expanded="false"
+			>
+				Przekonwertuj nową
 			</button>
+			<div id="import_section_body" class="operation-section-body" aria-hidden="true">
+				<div class="operation-section-body-inner">
 
-			<progress id="import_progress" max="100" value="0"></progress>
-			<p id="import_status" role="status">PotreeConverter jest gotowy.</p>
-			<p class="helper-text">Duże pliki mogą konwertować się kilka lub kilkadziesiąt minut.</p>
-			<details id="log_details" hidden>
-				<summary>Szczegóły konwersji</summary>
-				<pre id="import_log"></pre>
-			</details>
+					<div class="form-group">
+						<label for="cloud_file">Plik LAS lub LAZ</label>
+						<input id="cloud_file" name="cloudFile" type="file" accept=".las,.laz" required>
+					</div>
+
+					<div class="form-group">
+						<label for="cloud_name">Nazwa chmury</label>
+						<input id="cloud_name" name="cloudName" type="text" maxlength="120" required>
+					</div>
+
+					<button id="convert_button" class="primary-button" type="submit" style="width: 100%; margin-top: 0.85rem;">
+						Prześlij i konwertuj
+					</button>
+
+					<progress id="import_progress" max="100" value="0"></progress>
+					<p id="import_status" role="status">PotreeConverter jest gotowy.</p>
+					<p class="helper-text">Duże pliki mogą konwertować się kilka lub kilkadziesiąt minut.</p>
+					<details id="log_details" hidden>
+						<summary>Szczegóły konwersji</summary>
+						<pre id="import_log"></pre>
+					</details>
+				</div>
+			</div>
 		</form>
 
-		<hr class="panel-divider">
-
-		<form id="segment_form">
-			<div class="section-label">Wytnij fragment chmury</div>
+		<form id="segment_form" class="operation-section">
+			<button
+				class="operation-section-toggle"
+				type="button"
+				aria-controls="segment_section_body"
+				aria-expanded="false"
+			>
+				Wytnij fragment chmury
+			</button>
+			<div id="segment_section_body" class="operation-section-body" aria-hidden="true">
+				<div class="operation-section-body-inner">
 			<p id="segment_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
 
 			<div class="form-group">
@@ -438,12 +559,21 @@
 				<summary>Szczegóły segmentacji i konwersji</summary>
 				<pre id="segment_log"></pre>
 			</details>
+				</div>
+			</div>
 		</form>
 
-		<hr class="panel-divider">
-
-		<form id="point_removal_form">
-			<div class="section-label">Usuń punkty z sąsiedztwem</div>
+		<form id="point_removal_form" class="operation-section">
+			<button
+				class="operation-section-toggle"
+				type="button"
+				aria-controls="point_removal_section_body"
+				aria-expanded="false"
+			>
+				Usuń punkty z sąsiedztwem
+			</button>
+			<div id="point_removal_section_body" class="operation-section-body" aria-hidden="true">
+				<div class="operation-section-body-inner">
 			<p id="point_removal_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
 
 			<div class="form-group">
@@ -478,12 +608,21 @@
 				<summary>Szczegóły usuwania i konwersji</summary>
 				<pre id="point_removal_log"></pre>
 			</details>
+				</div>
+			</div>
 		</form>
 
-		<hr class="panel-divider">
-
-		<form id="transform_form">
-			<div class="section-label">Transformuj chmurę</div>
+		<form id="transform_form" class="operation-section">
+			<button
+				class="operation-section-toggle"
+				type="button"
+				aria-controls="transform_section_body"
+				aria-expanded="false"
+			>
+				Transformuj chmurę
+			</button>
+			<div id="transform_section_body" class="operation-section-body" aria-hidden="true">
+				<div class="operation-section-body-inner">
 			<p id="transform_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
 
 			<div class="form-group">
@@ -548,6 +687,8 @@
 				<summary>Szczegóły transformacji i konwersji</summary>
 				<pre id="transform_log"></pre>
 			</details>
+				</div>
+			</div>
 		</form>
 	</aside>
 
@@ -572,6 +713,7 @@
 		const importToggle = document.getElementById("import_toggle");
 		const importPanel = document.getElementById("import_panel");
 		const importClose = document.getElementById("import_close");
+		const operationSectionToggles = [...document.querySelectorAll(".operation-section-toggle")];
 		const importForm = document.getElementById("import_form");
 		const cloudFile = document.getElementById("cloud_file");
 		const cloudName = document.getElementById("cloud_name");
@@ -786,6 +928,22 @@
 			importPanel.hidden = !open;
 			importToggle.hidden = open;
 			importToggle.setAttribute("aria-expanded", String(open));
+		}
+
+		function setOperationSectionExpanded(toggle, expanded) {
+			const section = toggle.closest(".operation-section");
+			const body = document.getElementById(toggle.getAttribute("aria-controls"));
+			section.classList.toggle("is-expanded", expanded);
+			toggle.setAttribute("aria-expanded", String(expanded));
+			body.setAttribute("aria-hidden", String(!expanded));
+			body.toggleAttribute("inert", !expanded);
+		}
+
+		for (const toggle of operationSectionToggles) {
+			setOperationSectionExpanded(toggle, false);
+			toggle.addEventListener("click", () => {
+				setOperationSectionExpanded(toggle, toggle.getAttribute("aria-expanded") !== "true");
+			});
 		}
 
 		function pointRemovalRadiusValue() {
