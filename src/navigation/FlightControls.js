@@ -107,7 +107,7 @@ export class FlightControls extends EventDispatcher {
 		this.pressedKeys.clear();
 		this.dispatchEvent({
 			type: "error",
-			message: message || "Nie udało się przechwycić myszy. Kliknij „Lot WSAD”, aby spróbować ponownie.",
+			message: message || "Nie udało się przechwycić myszy. Kliknij ikonę samolotu, aby spróbować ponownie.",
 		});
 	}
 

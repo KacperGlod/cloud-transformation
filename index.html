@@ -467,7 +467,6 @@
 
 		.flight-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.65rem; }
 		.flight-header h2 { margin: 0; font-size: 0.95rem; }
-		#flight_toggle { width: 100%; margin-top: 0.85rem; }
 		#flight_help { margin: 0; font-size: 0.78rem; line-height: 1.7; }
 		#flight_help strong { color: #f4f7fa; }
 		#flight_speed { display: block; margin-top: 0.5rem; color: #93a3b2; }
@@ -539,7 +538,7 @@
 		Kliknij niepasujący punkt. Przeciąganie nadal obraca widok. Naciśnij Esc, aby zakończyć wybieranie.
 	</div>
 	<div id="flight_toolbar" aria-label="Sterowanie lotem">
-		<button id="flight_menu_toggle" type="button" aria-label="Sterowanie lotem WSAD" title="Sterowanie lotem WSAD" aria-controls="flight_panel" aria-expanded="false">
+		<button id="flight_menu_toggle" type="button" aria-label="Włącz swobodny lot WSAD" title="Włącz swobodny lot WSAD" aria-controls="flight_panel" aria-expanded="false" aria-pressed="false" aria-describedby="flight_help">
 			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 				<path d="M22 16v-2l-8-5V3.5a2 2 0 0 0-4 0V9l-8 5v2l8-2.5V19l-2 1.5V22l4-1 4 1v-1.5L14 19v-5.5Z"/>
 			</svg>
@@ -547,7 +546,7 @@
 		<section id="flight_panel" aria-labelledby="flight_heading" hidden>
 			<div class="flight-header">
 				<h2 id="flight_heading">Swobodny lot</h2>
-				<button id="flight_close" class="icon-button" type="button" aria-label="Zamknij podpowiedzi lotu">×</button>
+				<button id="flight_close" class="icon-button" type="button" aria-label="Zakończ lot i zamknij instrukcję">×</button>
 			</div>
 			<p id="flight_help">
 				<strong>W / S</strong> — do przodu / do tyłu<br>
@@ -558,7 +557,6 @@
 				<span id="flight_speed">Kółko myszy zmienia prędkość lotu.</span>
 				<span id="flight_message" role="status"></span>
 			</p>
-			<button id="flight_toggle" class="primary-button" type="button" aria-pressed="false" aria-describedby="flight_help">Lot WSAD</button>
 		</section>
 	</div>
 	<div id="flight_crosshair" aria-hidden="true" hidden></div>
@@ -871,7 +869,6 @@
 		const flightMenuToggle = document.getElementById("flight_menu_toggle");
 		const flightPanel = document.getElementById("flight_panel");
 		const flightClose = document.getElementById("flight_close");
-		const flightToggle = document.getElementById("flight_toggle");
 		const flightSpeed = document.getElementById("flight_speed");
 		const flightMessage = document.getElementById("flight_message");
 		const flightCrosshair = document.getElementById("flight_crosshair");
@@ -923,15 +920,13 @@
 			flightMenuToggle.setAttribute("aria-expanded", String(open));
 		}
 
-		flightMenuToggle.addEventListener("click", () => setFlightPanelOpen(flightPanel.hidden));
 		flightClose.addEventListener("click", () => {
 			flightControls.stop();
 			setFlightPanelOpen(false);
 			flightMenuToggle.focus();
 		});
 		document.addEventListener("pointerdown", event => {
-			if (!flightPanel.hidden && !flightToolbar.contains(event.target)) {
-				flightControls.stop();
+			if (!flightControls.active && !flightControls.pending && !flightPanel.hidden && !flightToolbar.contains(event.target)) {
 				setFlightPanelOpen(false);
 			}
 		});
@@ -951,18 +946,23 @@
 			previousControls = null;
 			previousCameraMode = null;
 			document.body.classList.remove("flight-active");
+			setFlightPanelOpen(false);
 			flightCrosshair.hidden = true;
-			flightToggle.textContent = "Lot WSAD";
-			flightToggle.disabled = false;
-			flightToggle.setAttribute("aria-pressed", "false");
-			flightMenuToggle.title = "Sterowanie lotem WSAD";
+			flightMenuToggle.disabled = false;
+			flightMenuToggle.setAttribute("aria-pressed", "false");
+			flightMenuToggle.title = "Włącz swobodny lot WSAD";
 			flightMenuToggle.setAttribute("aria-label", flightMenuToggle.title);
 			viewer.enableAnnotations();
 		}
 
-		flightToggle.addEventListener("click", () => {
+		flightMenuToggle.addEventListener("click", () => {
+			if (flightControls.active || flightControls.pending) {
+				flightControls.stop();
+				return;
+			}
 			setPointRemovalPicking(false);
 			setPanelOpen(false);
+			setFlightPanelOpen(true);
 			flightMessage.textContent = "";
 			previousControls = viewer.controls;
 			previousCameraMode = viewer.scene.cameraMode;
@@ -972,15 +972,15 @@
 			viewer.inputHandler.pressedKeys = {};
 			viewer.setCameraMode(Potree.CameraMode.PERSPECTIVE);
 			viewer.setControls(flightControls);
-			flightToggle.disabled = true;
+			flightMenuToggle.disabled = true;
 			flightControls.start();
 		});
 		flightControls.addEventListener("start", () => {
-			setFlightPanelOpen(false);
+			setFlightPanelOpen(true);
 			document.body.classList.add("flight-active");
 			flightCrosshair.hidden = false;
-			flightToggle.textContent = "Lot aktywny · Esc";
-			flightToggle.setAttribute("aria-pressed", "true");
+			flightMenuToggle.disabled = false;
+			flightMenuToggle.setAttribute("aria-pressed", "true");
 			flightMenuToggle.title = "Lot aktywny — Esc kończy lot";
 			flightMenuToggle.setAttribute("aria-label", flightMenuToggle.title);
 			viewer.disableAnnotations();
