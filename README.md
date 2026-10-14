@@ -27,8 +27,9 @@ poleceń `npm install` i `npm start`.
 
 ## Swobodny lot WSAD
 
-Kliknij **Lot WSAD** w lewym dolnym rogu viewera. Mysz zostanie przechwycona,
-a kamera przełączy się na widok perspektywiczny. Sterowanie działa jak w grach:
+Kliknij **ikonę samolotu** w lewym dolnym rogu viewera, aby rozwinąć podpowiedzi,
+a następnie **Lot WSAD**. Panel schowa się po rozpoczęciu lotu, mysz zostanie
+przechwycona, a kamera przełączy się na widok perspektywiczny. Sterowanie działa jak w grach:
 
 - **W / S** — lot do przodu / do tyłu w kierunku, w którym patrzysz;
 - **A / D** — lot w lewo / w prawo;
@@ -41,7 +42,9 @@ a kamera przełączy się na widok perspektywiczny. Sterowanie działa jak w gra
 
 Prędkość jest podawana w jednostkach współrzędnych chmury na sekundę. Możesz
 latać swobodnie w przestrzeni, bez grawitacji i kolizji. Lot zatrzymuje się również
-po przełączeniu okna lub karty; ponowne wejście wymaga kliknięcia **Lot WSAD**.
+po przełączeniu okna lub karty; ponowne wejście wymaga rozwinięcia ikony samolotu
+i kliknięcia **Lot WSAD**. Podpowiedzi można zamknąć ikoną, przyciskiem ×,
+klawiszem Esc albo kliknięciem poza panelem.
 
 ## Import LAS/LAZ
 
