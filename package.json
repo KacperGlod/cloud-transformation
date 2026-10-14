@@ -18,6 +18,7 @@
   "main": "./build/potree/potree.js",
   "scripts": {
     "start": "node server.js",
+    "test:flight": "node --test tests/flight-controls.test.mjs",
     "dev": "gulp watch",
     "build": "gulp build pack",
     "postinstall": "npm run build"

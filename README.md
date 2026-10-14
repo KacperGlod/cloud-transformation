@@ -25,6 +25,24 @@ Viewer i lokalne API konwersji będą dostępne pod adresem:
 Na systemie bez blokady skryptów PowerShell można używać standardowych
 poleceń `npm install` i `npm start`.
 
+## Swobodny lot WSAD
+
+Kliknij **Lot WSAD** w lewym dolnym rogu viewera. Mysz zostanie przechwycona,
+a kamera przełączy się na widok perspektywiczny. Sterowanie działa jak w grach:
+
+- **W / S** — lot do przodu / do tyłu w kierunku, w którym patrzysz;
+- **A / D** — lot w lewo / w prawo;
+- **mysz** — rozglądanie bez trzymania przycisku;
+- **Spacja lub E** — lot w górę;
+- **Ctrl lub Q** — lot w dół;
+- **Shift** — trzykrotnie szybszy lot;
+- **kółko myszy** — zwiększanie / zmniejszanie prędkości;
+- **Esc** — zakończenie lotu i powrót do poprzedniego sterowania.
+
+Prędkość jest podawana w jednostkach współrzędnych chmury na sekundę. Możesz
+latać swobodnie w przestrzeni, bez grawitacji i kolizji. Lot zatrzymuje się również
+po przełączeniu okna lub karty; ponowne wejście wymaga kliknięcia **Lot WSAD**.
+
 ## Import LAS/LAZ
 
 PotreeConverter powinien znajdować się tutaj:
@@ -146,6 +164,7 @@ PotreeConverter 2.x plik `metadata.json`.
 - `npm.cmd start` — uruchamia lokalny viewer, upload, segmentację, transformacje i kolejkę
   PotreeConvertera.
 - `npm.cmd run build` — przebudowuje bibliotekę Potree.
+- `npm.cmd run test:flight` — sprawdza sterowanie lotem (Node.js 22 lub nowszy).
 - `npm.cmd run dev` — przebudowuje bibliotekę i obserwuje jej pliki źródłowe; serwer uruchom osobno przez `npm.cmd start`.
 
 Serwer nasłuchuje wyłącznie lokalnie, a pliki robocze uploadu znajdują
