@@ -167,7 +167,7 @@ PotreeConverter 2.x plik `metadata.json`.
 - `npm.cmd start` — uruchamia lokalny viewer, upload, segmentację, transformacje i kolejkę
   PotreeConvertera.
 - `npm.cmd run build` — przebudowuje bibliotekę Potree.
-- `npm.cmd run test:flight` — sprawdza sterowanie lotem (Node.js 22 lub nowszy).
+- `npm.cmd run test:flight` — sprawdza sterowanie lotem i zoom kółkiem myszy (Node.js 22 lub nowszy).
 - `npm.cmd run dev` — przebudowuje bibliotekę i obserwuje jej pliki źródłowe; serwer uruchom osobno przez `npm.cmd start`.
 
 Serwer nasłuchuje wyłącznie lokalnie, a pliki robocze uploadu znajdują
