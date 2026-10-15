@@ -8,6 +8,7 @@ node_modules
 /.venv/
 /.pytest_cache/
 .env
+/AGENTS.md
 /pointclouds/
 __pycache__/
 *.py[cod]
