@@ -1,12 +1,21 @@
 # Cloud Transformation
 
-A simple, full-screen point cloud viewer based on Potree 1.8. The project
-uses `index.html` as its main view, supports LAS/LAZ uploads, and converts
-files locally using PotreeConverter.
+A Python web application for managing and processing point clouds, with a
+Potree 1.8 viewer. FastAPI serves the library, accounts, REST API, and viewer
+from the same address. SQLAlchemy models store metadata in SQLite; a separate
+worker executes the durable processing queue.
 
 ## Getting started
 
-Install the dependencies:
+Requires Python 3.11 or later and Node.js/npm for building Potree assets.
+Create a virtual environment and install the Python dependencies:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Install/build the viewer dependencies if `build/potree/potree.js` is missing:
 
 ```powershell
 npm.cmd install
@@ -18,12 +27,145 @@ Start the local server:
 npm.cmd start
 ```
 
-The viewer and local conversion API will be available at:
+`npm start` is a compatibility launcher that selects `.venv` and starts
+`run.py`. You can also start Python directly:
+
+```powershell
+.\.venv\Scripts\python.exe run.py
+```
+
+The library and viewer will be available at:
 
     http://localhost:1234/
 
 If your PowerShell execution policy allows scripts, you can use the standard
 `npm install` and `npm start` commands.
+
+Open the application and create your account. The first account adopts existing
+directories in `pointclouds/`, without copying or moving their files. Further
+accounts start with an empty library. Legacy point clouds default to `private`
+unless their `cloud-info.json` explicitly declares `public`.
+
+## Library, access, and database
+
+The library lists the signed-in user's uploads and processing results. It
+supports LAS/LAZ uploads, renaming, changing visibility, viewing job logs, and
+deleting a cloud together with its files. Cloud names need not be unique.
+New clouds have UUID identifiers and directories independent of their names.
+
+- `private` (default): metadata and files are accessible only to the owner.
+- `public`: anyone with the viewer URL can view the converted cloud. Editing,
+  processing, job logs, and original-file downloads still require ownership.
+
+The database is `data/app.sqlite3` by default. It contains `User`, `Cloud`,
+`ProcessingJob`, and login-session records. LAS/LAZ and Potree binaries stay
+outside the database. Only dedicated asset directories are served statically;
+database files, Python source, tools, and temporary uploads are not web assets.
+Converted data is served after authorization with HTTP Range support.
+
+SQLite uses WAL, foreign keys, and a 30-second busy timeout. Database
+transactions remain short and never encompass conversion or file uploads.
+Alembic migrations run automatically at startup. To run them manually:
+
+```powershell
+.\.venv\Scripts\python.exe -m backend.migrate
+```
+
+To create a future schema migration after changing the models:
+
+```powershell
+.\.venv\Scripts\python.exe -m alembic revision --autogenerate -m "describe change"
+```
+
+Review the generated migration before applying it. Models use portable UUID,
+JSON, and date types. A future PostgreSQL deployment will additionally require
+a PostgreSQL driver, a new `DATABASE_URL`, and migration of existing records;
+changing the URL alone does not transfer data. PostgreSQL operation has not
+been validated by the SQLite test suite.
+
+Back up both the database and point-cloud files. For a running SQLite database,
+use SQLite's backup API rather than copying only the `.sqlite3` file while its
+WAL is active. Keep `data/` persistent across deployments and out of Git.
+
+## Worker and configuration
+
+`run.py` starts a separate Python worker automatically. A filesystem lock allows
+one processing worker per runtime directory on the same machine. Queued tasks
+survive restarts. Interrupted processing restarts from its saved input; a
+partial upload is marked failed and must be uploaded again. Deletion is refused
+while the cloud is being processed or used as another job's source.
+
+To run the API and worker in separate terminals:
+
+```powershell
+.\.venv\Scripts\python.exe run.py --no-worker
+.\.venv\Scripts\python.exe -m backend.worker
+```
+
+Initialize the database before starting a standalone worker. The current
+deployment uses one API instance and one worker on a single machine.
+
+Configuration is read from environment variables:
+
+| Variable | Default / purpose |
+| --- | --- |
+| `DATABASE_URL` | SQLite at `data/app.sqlite3` |
+| `DATA_DIR` | Private database and lock directory: `data/` |
+| `POINTCLOUDS_DIR` | Original and converted point clouds: `pointclouds/` |
+| `RUNTIME_DIR` | Uploads, worker logs, temporary data: `.runtime/python/` |
+| `MAX_UPLOAD_BYTES` | 100 GiB per source file |
+| `POTREE_CONVERTER` | Bundled converter executable |
+| `LASZIP_LIBRARY` | Bundled `laszip.dll` |
+| `START_WORKER` | `1`; set `0` for an independently managed worker |
+| `SECURE_COOKIES` | `0` for localhost HTTP; use `1` with HTTPS |
+| `HOST` / `PORT` | `127.0.0.1` / `1234`; also available as CLI arguments |
+
+Accounts use scrypt password hashes and expiring HttpOnly session cookies.
+Mutating browser requests must come from the application's own origin.
+Keep HTTPS/reverse-proxy configuration aligned with the application's URL.
+The bundled processing tools are Windows binaries; other operating systems need
+compatible PotreeConverter and LASzip builds before processing is enabled.
+
+## REST API
+
+Interactive API documentation is available at `/docs`; OpenAPI is `/openapi.json`.
+Authenticate with `/api/auth/register` or `/api/auth/login`, then retain the
+session cookie for subsequent calls.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/auth/me`, `POST /api/auth/logout` | Current account and logout |
+| `GET /api/clouds` | Signed-in user's clouds, including pending/failed uploads |
+| `POST /api/clouds` | Multipart upload: `file`, `name`, optional `visibility` |
+| `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
+| `PATCH /api/clouds/{id}` | Owner changes `name` and/or `visibility` |
+| `DELETE /api/clouds/{id}` | Owner deletes the cloud and its files |
+| `GET /api/clouds/{id}/files/{path}` | Authorized files, including Range requests |
+| `GET /api/jobs`, `GET /api/jobs/{id}` | Owner's persistent job states and logs |
+| `POST /api/segmentations` | Queue a clipping-box operation |
+| `POST /api/transformations` | Queue a coordinate transformation |
+| `POST /api/point-removals` | Queue spherical point removal |
+
+`/viewer?cloud={id}` opens a specific cloud. The library and viewer stream large
+uploads through `/api/conversions?filename=...&name=...&visibility=private`
+using an `application/octet-stream` body, avoiding a second temporary copy
+created by multipart parsing. Multipart `/api/clouds` is also supported.
+The viewer's existing raw upload and polling endpoints remain compatible. Ready legacy
+file URLs under `/pointclouds/` also pass through authorization.
+
+## Verification
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest tests/test_api.py -q
+npm.cmd run test:flight
+```
+
+API tests use isolated temporary databases and point clouds. They cover account
+sessions, ownership, visibility, Range requests, uploads, stable identifiers,
+deletion, legacy imports, and restart recovery. The integration test uses the
+bundled converter and LASzip for real import, transformation, segmentation,
+and point-removal jobs; it skips when those tools are unavailable.
 
 ## WASD free flight
 
@@ -57,37 +199,37 @@ tools/PotreeConverter/PotreeConverter.exe
 
 After starting the project:
 
-1. Open the LAS/LAZ upload dialog in the top-right corner.
+1. Click **Dodaj chmurę** in the library (or open the viewer's import panel).
 2. Select a `.las` or `.laz` file.
-3. Enter a unique point cloud name.
+3. Enter a point cloud name and choose its visibility in the library.
 4. Click the button to upload and convert the file.
 
 The file is uploaded only to the local server on your computer.
-PotreeConverter saves the output in `pointclouds/<name>/`, and the viewer
-automatically loads the generated `metadata.json` file. Conversions run one
-at a time to avoid overloading the computer.
+PotreeConverter saves new output in `pointclouds/<uuid>/`. Once ready, open the
+cloud from the library. Imports initiated inside the viewer load automatically.
+Conversions run one at a time to avoid overloading the computer.
 
 After a successful conversion, the point cloud directory also contains the
 original LAS/LAZ file under its original name and the complete PotreeConverter
 output in `conversion.log`. The `cloud-info.json` file stores local information
-about the point cloud's origin and provides a foundation for future account
-and database integration.
+about the point cloud's origin. The SQL database is authoritative for current
+names, ownership, visibility, and processing status.
 
 ## Point cloud segmentation
 
 Segmentation runs locally and requires a point cloud with its original LAS or
 LAZ file preserved. Points are read and written using
 `tools/PotreeConverter/laszip.dll`, and the segmentation script runs with the
-system's Python 3 installation.
+application's Python installation.
 
 1. Load the source point cloud.
 2. Open the cloud processing panel.
 3. Add a clipping box, then adjust its position, rotation, and scale in Potree.
 4. Choose whether to keep points inside or outside the clipping box.
-5. Enter a unique output name and start segmentation and conversion.
+5. Enter an output name and start segmentation and conversion.
 
 The server selects points from the original LAS/LAZ file, saves the result as
-`pointclouds/<name>/<name>.laz`, runs PotreeConverter, and automatically loads
+`pointclouds/<uuid>/<source-file>.laz`, runs PotreeConverter, and automatically loads
 the new point cloud. Segmentation also supports rotated clipping boxes.
 
 The output directory contains:
@@ -134,7 +276,7 @@ both LAS and LAZ files.
    in degrees, and XYZ scale.
 4. Choose a pivot: the center of the cloud's bounding box, the coordinate
    origin, or custom coordinates.
-5. Enter a unique output name and start transformation and conversion.
+5. Enter an output name and start transformation and conversion.
 
 Rotations are applied around the X, Y, and Z axes in that order. The server
 makes two passes over the points: first, it calculates the new bounds and a
@@ -152,26 +294,21 @@ PL-2000 and WGS84.
 
 ## Manually replacing a point cloud
 
-1. Place the converted point cloud in the `pointclouds` directory.
-2. Open `index.html`.
-3. Change the value of `POINT_CLOUD_PATH`:
-
-```js
-const POINT_CLOUD_PATH = "./pointclouds/cloud-name/metadata.json";
-```
-
-For PotreeConverter 1.x output, point to `cloud.js`. For PotreeConverter 2.x
-output, use `metadata.json`.
+Place a converted cloud in its own directory under `pointclouds/` and restart
+the application. Newly discovered directories are registered to the first
+account. PotreeConverter 1.x output needs `cloud.js`; PotreeConverter 2.x output
+needs `metadata.json`, `hierarchy.bin`, and `octree.bin`. Open the registered
+cloud from the library. New uploads should normally use the API or upload form.
 
 ## Commands
 
-- `npm.cmd start` — starts the local viewer, upload API, segmentation,
-  transformations, and PotreeConverter queue.
+- `npm.cmd start` — starts the Python application, library, API, viewer,
+  and separate processing worker.
 - `npm.cmd run build` — rebuilds the Potree library.
 - `npm.cmd run test:flight` — checks flight controls and mouse wheel zoom
   (requires Node.js 22 or later).
 - `npm.cmd run dev` — rebuilds the library and watches its source files;
   start the server separately with `npm.cmd start`.
 
-The server listens only on localhost. Temporary upload files are stored in
-the `.runtime` directory, which is ignored by Git.
+The server listens only on localhost by default. Temporary uploads and worker
+logs are stored in `.runtime/python/`, which is ignored by Git.

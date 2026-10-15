@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zaloguj się · CloudPoint</title><link rel="stylesheet" href="/assets/app.css"><script type="module" src="/assets/login.js"></script></head>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-intro">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">✳</span> CloudPoint</a>
+      <div>
+        <p class="eyebrow">CHMURY PUNKTÓW W PRZEGLĄDARCE</p>
+        <h1>Przeglądaj i przetwarzaj<br>chmury punktów.</h1>
+        <p>Jedno miejsce do przechowywania, przeglądania i przetwarzania danych 3D.</p>
+        <div class="point-art" aria-hidden="true"></div>
+      </div>
+      <small><a href="https://github.com/KacperGlod" target="_blank" rel="noopener noreferrer">github.com/KacperGlod</a> &nbsp;·&nbsp; 2026</small>
+    </section>
+    <section class="login-card"><div class="auth-tabs" role="group" aria-label="Dostęp do konta"><button id="login_tab" type="button" class="active">Logowanie</button><button id="register_tab" type="button">Nowe konto</button></div><h2 id="auth_title">Witaj ponownie</h2><p id="auth_description" class="muted">Zaloguj się, aby otworzyć swoją bibliotekę.</p><form id="auth_form"><label>E-mail<input id="email" type="email" autocomplete="username" maxlength="254" required placeholder="twoj@email.pl"></label><label>Hasło<input id="password" type="password" autocomplete="current-password" minlength="10" maxlength="256" required placeholder="Minimum 10 znaków"></label><p id="setup_hint" class="setup-hint" hidden>Pierwsze konto otrzyma dotychczasowe lokalne chmury z tego projektu.</p><p id="auth_status" class="form-status" role="status"></p><button id="auth_submit" class="primary full" type="submit">Zaloguj się</button></form></section>
+  </main>
+</body>
+</html>

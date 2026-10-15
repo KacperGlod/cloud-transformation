@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
+	<base href="/">
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 	<meta name="description" content="Viewer i konwerter chmur punktów LAS/LAZ oparty na Potree">
@@ -533,6 +534,7 @@
 	<script src="./build/potree/potree.js"></script>
 	<script src="./libs/plasio/js/laslaz.js"></script>
 
+	<a href="/" id="library_link" style="position:absolute;top:1rem;left:4rem;z-index:1000;padding:.65rem .9rem;border:1px solid #3b4a53;border-radius:7px;background:#182126ed;color:#edf2f3;text-decoration:none;font:13px 'Segoe UI',sans-serif;">← Biblioteka chmur</a>
 	<div id="viewer_status">Wczytywanie chmury punktów…</div>
 	<div id="point_removal_hint" role="status" hidden>
 		Kliknij niepasujący punkt. Przeciąganie nadal obraca widok. Naciśnij Esc, aby zakończyć wybieranie.
@@ -646,7 +648,7 @@
 			</div>
 
 			<div class="form-group">
-				<label for="segment_name">Nazwa wynikowej chmury i pliku LAZ</label>
+				<label for="segment_name">Nazwa wynikowej chmury</label>
 				<input id="segment_name" name="segmentName" type="text" maxlength="120" required>
 			</div>
 
@@ -774,7 +776,7 @@
 			</div>
 
 			<div class="form-group">
-				<label for="transform_name">Nazwa wynikowej chmury i pliku LAZ</label>
+				<label for="transform_name">Nazwa wynikowej chmury</label>
 				<input id="transform_name" name="transformName" type="text" maxlength="120" required>
 			</div>
 
@@ -805,10 +807,7 @@
 	<script type="module">
 		import * as THREE from "./libs/three.js/build/three.module.js";
 
-		const DEFAULT_POINT_CLOUD = {
-			name: "vol_total",
-			url: "./pointclouds/vol_total/cloud.js",
-		};
+		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
 		const LAST_CLOUD_KEY = "cloud-transformation:last-cloud";
 
 		const viewerStatus = document.getElementById("viewer_status");
@@ -1253,6 +1252,11 @@
 			}
 			const cloudDescriptor = availableClouds.find(cloud => normalizeCloudUrl(cloud.url) === normalizedUrl)
 				|| { name, slug: name, url: normalizedUrl, sourceAvailable: false, sourceFile: null };
+			if (cloudDescriptor.id) {
+				requestedCloudId = cloudDescriptor.id;
+				window.history.replaceState(null, "", `/viewer?cloud=${encodeURIComponent(cloudDescriptor.id)}`);
+				document.title = `${cloudDescriptor.name} · CloudPoint`;
+			}
 			showViewerStatus(`Wczytywanie chmury "${name}"…`);
 
 			if (loadedPointClouds.has(normalizedUrl)) {
@@ -1303,18 +1307,30 @@
 		async function refreshCloudList() {
 			const previousUrl = cloudList.value;
 			const response = await fetch("/api/clouds", { cache: "no-store" });
-			if (!response.ok) {
+			if (!response.ok && response.status !== 401) {
 				throw new Error("Nie udało się pobrać listy chmur.");
 			}
 
 			const payload = await response.json();
-			availableClouds = payload.clouds;
+			availableClouds = (payload.clouds || []).filter(cloud => cloud.status === "ready");
+			if (requestedCloudId && !availableClouds.some(cloud => cloud.id === requestedCloudId)) {
+				const selectedResponse = await fetch(`/api/clouds/${encodeURIComponent(requestedCloudId)}`, { cache: "no-store" });
+				if (!selectedResponse.ok) {
+					throw new Error("Chmura nie istnieje lub nie masz do niej dostępu.");
+				}
+				const selectedCloud = await selectedResponse.json();
+				if (selectedCloud.status !== "ready") {
+					throw new Error(selectedCloud.error || "Chmura nie jest jeszcze gotowa. Sprawdź status w bibliotece.");
+				}
+				availableClouds.push(selectedCloud);
+			}
 			cloudList.replaceChildren();
 
 			for (const cloud of availableClouds) {
 				const option = document.createElement("option");
 				option.value = cloud.url;
-				const relation = cloud.parentCloud ? ` ← ${cloud.parentCloud}` : "";
+				const parent = availableClouds.find(candidate => candidate.id === cloud.parentCloud);
+				const relation = cloud.parentCloud ? ` ← ${parent?.name || "wynik przetwarzania"}` : "";
 				option.textContent = `${cloud.name} (${cloud.format})${relation}`;
 				cloudList.append(option);
 			}
@@ -1928,12 +1944,15 @@
 				const clouds = await refreshCloudList();
 				const savedUrl = localStorage.getItem(LAST_CLOUD_KEY);
 				const initialCloud = clouds.find(cloud => normalizeCloudUrl(cloud.url) === savedUrl)
-					|| clouds.find(cloud => cloud.slug === DEFAULT_POINT_CLOUD.name)
-					|| clouds[0]
-					|| DEFAULT_POINT_CLOUD;
+					|| clouds[0];
+				const selectedCloud = clouds.find(cloud => cloud.id === requestedCloudId) || initialCloud;
+				if (!selectedCloud) {
+					showViewerStatus("Brak gotowych chmur. Wróć do biblioteki i dodaj plik LAS lub LAZ.");
+					return;
+				}
 
-				cloudList.value = initialCloud.url;
-				await loadPointCloud(initialCloud.url, initialCloud.name);
+				cloudList.value = selectedCloud.url;
+				await loadPointCloud(selectedCloud.url, selectedCloud.name);
 			} catch (error) {
 				showViewerStatus(error.message, "error");
 			}

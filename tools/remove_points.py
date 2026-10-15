@@ -200,14 +200,17 @@ def parse_arguments() -> argparse.Namespace:
 	parser.add_argument("--input", required=True, type=Path)
 	parser.add_argument("--output", required=True, type=Path)
 	parser.add_argument("--laszip", required=True, type=Path)
-	parser.add_argument("--selections", required=True, help="JSON array of positions and radii")
+	selection_input = parser.add_mutually_exclusive_group(required=True)
+	selection_input.add_argument("--selections", help="JSON array of positions and radii")
+	selection_input.add_argument("--selections-file", type=Path, help="UTF-8 JSON file of positions and radii")
 	return parser.parse_args()
 
 
 def main() -> int:
 	arguments = parse_arguments()
 	try:
-		selections = parse_selections(arguments.selections)
+		selection_json = arguments.selections if arguments.selections is not None else arguments.selections_file.read_text(encoding="utf-8")
+		selections = parse_selections(selection_json)
 		input_path = arguments.input.resolve(strict=True)
 		output_path = arguments.output.resolve()
 		dll_path = arguments.laszip.resolve(strict=True)

@@ -1,0 +1,342 @@
+from pathlib import Path
+import json
+import struct
+import uuid
+
+from fastapi.testclient import TestClient
+import pytest
+from sqlalchemy import select
+
+from backend.app import create_app
+from backend.config import Settings
+from backend.models import Cloud, ProcessingJob, User
+from backend.worker import Worker
+
+
+@pytest.fixture
+def application(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", clouds_dir=tmp_path / "pointclouds",
+                        runtime_dir=tmp_path / "runtime", database_url="", start_worker=False)
+    app = create_app(settings)
+    with TestClient(app) as client:
+        yield app, client, settings
+
+
+def register(client, email="owner@example.com"):
+    client.cookies.clear()
+    response = client.post("/api/auth/register", json={"email": email, "password": "test-password-123"})
+    assert response.status_code == 201, response.text
+    return response.json()["user"], dict(client.cookies)
+
+
+def use_cookies(client, cookies):
+    client.cookies.clear()
+    client.cookies.update(cookies)
+
+
+def seed_cloud(app, settings, owner, *, visibility="private", parent=None, key=None):
+    identifier = uuid.uuid4()
+    storage_key = key or str(identifier)
+    directory = settings.clouds_dir / storage_key
+    directory.mkdir()
+    (directory / "metadata.json").write_text(json.dumps({"version": "2.0", "hierarchy": {"firstChunkSize": 22}}))
+    (directory / "hierarchy.bin").write_bytes(struct.pack("<BBIqq", 1, 0, 1, 0, 10))
+    (directory / "octree.bin").write_bytes(b"0123456789")
+    (directory / "original.las").write_bytes(las_bytes())
+    (directory / "cloud-info.json").write_text('{"name":"Original"}')
+    with app.state.database.session() as session:
+        cloud = Cloud(id=identifier, owner_id=uuid.UUID(owner["id"]), name="Testowa chmura",
+            visibility=visibility, status="ready", storage_key=storage_key,
+            source_file="original.las", entry_file="metadata.json", parent_id=parent,
+            size_bytes=100)
+        session.add(cloud)
+        session.commit()
+    return str(identifier), directory
+
+
+def las_bytes(count=10):
+    header = bytearray(227)
+    header[:4] = b"LASF"
+    header[24:26] = bytes((1, 2))
+    header[26:58] = b"CloudPoint test".ljust(32, b"\0")
+    struct.pack_into("<H", header, 94, 227)
+    struct.pack_into("<I", header, 96, 227)
+    header[104] = 2
+    struct.pack_into("<H", header, 105, 26)
+    struct.pack_into("<I", header, 107, count)
+    struct.pack_into("<I", header, 111, count)
+    struct.pack_into("<ddd", header, 131, 0.001, 0.001, 0.001)
+    points = [(index % 20 * 1000, index // 20 % 20 * 1000, index // 400 * 1000) for index in range(count)]
+    coordinates = list(zip(*points))
+    bounds = [value / 1000 for axis in coordinates for value in (max(axis), min(axis))]
+    struct.pack_into("<dddddd", header, 179, *bounds)
+    records = b"".join(struct.pack("<iiiHBBbBHHHH", *point, 1000, 9, 1, 0, 0, 1, 40000, 20000, 10000)
+                       for point in points)
+    return bytes(header) + records
+
+
+def test_registration_login_logout_and_private_web_root(application):
+    app, client, settings = application
+    assert client.get("/", follow_redirects=False).headers["location"] == "/login"
+    assert client.get("/api/clouds").status_code == 401
+    assert client.get("/api/auth/status").json() == {"needsSetup": True}
+    user, cookies = register(client)
+    assert "httponly" in client.post("/api/auth/login", json={"email": user["email"], "password": "test-password-123"}).headers["set-cookie"].lower()
+    assert client.get("/").status_code == 200
+    assert client.get("/api/auth/me").json()["user"]["id"] == user["id"]
+    for path in ("/data/app.sqlite3", "/backend/app.py", "/server.js", "/.git/config", "/tools/segment_pointcloud.py"):
+        assert client.get(path).status_code == 404
+    assert client.post("/api/auth/logout").status_code == 204
+    assert client.get("/api/auth/me").status_code == 401
+    assert client.post("/api/auth/login", json={"email": user["email"], "password": "wrong-password-123"}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": user["email"], "password": "test-password-123"}).status_code == 200
+
+
+def test_owner_isolation_visibility_and_range_requests(application):
+    app, client, settings = application
+    owner, owner_cookies = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    file_url = f"/api/clouds/{identifier}/files/octree.bin"
+    response = client.get(file_url, headers={"Range": "bytes=2-5"})
+    assert response.status_code == 206
+    assert response.content == b"2345"
+    assert response.headers["content-range"] == "bytes 2-5/10"
+    assert client.head(file_url).headers["content-length"] == "10"
+    assert client.get(file_url, headers={"Range": "bytes=100-200"}).status_code == 416
+    other, other_cookies = register(client, "other@example.com")
+    assert client.get("/api/clouds").json() == {"clouds": []}
+    assert client.get(file_url).status_code == 404
+    assert client.get(f"/viewer?cloud={identifier}").status_code == 404
+    assert client.patch(f"/api/clouds/{identifier}", json={"name": "Stolen"}).status_code == 404
+    assert client.delete(f"/api/clouds/{identifier}").status_code == 404
+    use_cookies(client, owner_cookies)
+    assert client.patch(f"/api/clouds/{identifier}", json={"visibility": "public"}).status_code == 200
+    client.cookies.clear()
+    assert client.get(file_url).status_code == 200
+    assert client.get(f"/viewer?cloud={identifier}").status_code == 200
+    assert client.get(f"/api/clouds/{identifier}/files/original.las").status_code == 404
+    assert client.get(f"/pointclouds/{identifier}/octree.bin").status_code == 200
+    assert client.get(f"/api/clouds/{identifier}/files/%2e%2e%2fapp.sqlite3").status_code == 404
+    use_cookies(client, owner_cookies)
+    client.patch(f"/api/clouds/{identifier}", json={"visibility": "private"})
+    client.cookies.clear()
+    assert client.get(file_url).status_code == 404
+
+
+def test_rename_has_stable_id_paths_and_validation(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    before = client.get(f"/api/clouds/{identifier}").json()
+    response = client.patch(f"/api/clouds/{identifier}", json={"name": "Nowa nazwa / z polskimi znakami ąę"})
+    assert response.status_code == 200
+    after = response.json()
+    assert after["id"] == before["id"] and after["url"] == before["url"]
+    assert directory.is_dir()
+    assert client.patch(f"/api/clouds/{identifier}", json={"visibility": "hidden"}).status_code == 422
+    assert client.patch(f"/api/clouds/{identifier}", json={"name": "   "}).status_code == 422
+    assert client.patch(f"/api/clouds/{identifier}", json={"owner_id": str(uuid.uuid4())}).status_code == 422
+
+
+def test_uploads_are_durable_private_and_names_need_not_be_unique(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    for _ in range(2):
+        response = client.post("/api/clouds", data={"name": "Ta sama nazwa"},
+                               files={"file": ("sample.las", las_bytes(), "application/octet-stream")})
+        assert response.status_code == 202, response.text
+        job = response.json()
+        assert job["status"] == "queued" and job["visibility"] == "private"
+        assert client.get(f"/api/jobs/{job['id']}").json()["cloudId"] == job["cloudId"]
+        with app.state.database.session() as session:
+            assert session.get(ProcessingJob, uuid.UUID(job["id"])).status == "queued"
+        assert (settings.runtime_dir / job["id"] / "sample.las").is_file()
+    records = client.get("/api/clouds").json()["clouds"]
+    assert len(records) == 2 and records[0]["id"] != records[1]["id"]
+    assert client.delete(f"/api/clouds/{records[0]['id']}").status_code == 409
+
+
+def test_raw_upload_compatibility_and_upload_errors(application):
+    app, client, settings = application
+    register(client)
+    response = client.post("/api/conversions?filename=test.las&name=Raw", content=las_bytes())
+    assert response.status_code == 202
+    assert client.get(f"/api/conversions/{response.json()['id']}").status_code == 200
+    assert client.post("/api/conversions?filename=test.exe&name=Bad", content=b"anything").status_code == 400
+    assert client.post("/api/conversions?filename=bad.las&name=Bad", content=b"invalid").status_code == 400
+    settings.max_upload_bytes = 2
+    assert client.post("/api/conversions?filename=big.las&name=Big", content=las_bytes()).status_code == 413
+
+
+def test_delete_preserves_derived_cloud_and_other_files(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    child_id, child_directory = seed_cloud(app, settings, owner, parent=uuid.UUID(identifier))
+    assert client.delete(f"/api/clouds/{identifier}").status_code == 204
+    assert not directory.exists() and child_directory.exists()
+    child = client.get(f"/api/clouds/{child_id}").json()
+    assert child["parentCloud"] is None
+    assert client.get(f"/api/clouds/{identifier}").status_code == 404
+
+
+def test_source_cannot_be_deleted_while_a_job_uses_it(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    response = client.post("/api/transformations", json={"sourceCloud": identifier, "name": "Wynik",
+        "translation": [1, 2, 3], "rotationDegrees": [0, 0, 0], "scale": [1, 1, 1]})
+    assert response.status_code == 202, response.text
+    assert client.delete(f"/api/clouds/{identifier}").status_code == 409
+    assert directory.exists()
+
+
+def test_csrf_and_job_owner_checks(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    job = client.post("/api/conversions?filename=test.las&name=Raw", content=las_bytes()).json()
+    assert client.post("/api/auth/logout", headers={"Origin": "https://other.example"}).status_code == 403
+    register(client, "other@example.com")
+    assert client.get(f"/api/jobs/{job['id']}").status_code == 404
+
+
+def test_legacy_import_is_idempotent_and_claimed_by_first_account(application):
+    app, client, settings = application
+    directory = settings.clouds_dir / "legacy-cloud"
+    directory.mkdir()
+    (directory / "cloud.js").write_text('{"version":"1.7"}')
+    (directory / "cloud-info.json").write_text('{"name":"Stara chmura"}')
+    owner, cookies = register(client)
+    first = client.get("/api/clouds").json()["clouds"]
+    assert len(first) == 1 and first[0]["name"] == "Stara chmura" and first[0]["visibility"] == "private"
+    register(client, "second@example.com")
+    assert client.get("/api/clouds").json() == {"clouds": []}
+    from backend.services import import_legacy
+    with app.state.database.session() as session:
+        user = session.get(User, uuid.UUID(owner["id"]))
+        assert import_legacy(session, settings, user) == 0
+    assert (directory / "cloud.js").is_file()
+
+
+def test_worker_recovers_interrupted_jobs_without_deleting_uploaded_source(application):
+    app, client, settings = application
+    register(client)
+    payload = client.post("/api/conversions?filename=test.las&name=Recover", content=las_bytes()).json()
+    worker = Worker(settings, app.state.database)
+    identifier = worker.claim_next()
+    with app.state.database.session() as session:
+        job = session.get(ProcessingJob, identifier)
+        cloud = session.get(Cloud, job.cloud_id)
+        output = settings.clouds_dir / cloud.storage_key
+        output.mkdir()
+        (output / "partial.bin").write_bytes(b"partial")
+    worker.recover()
+    assert client.get(f"/api/jobs/{identifier}").json()["status"] == "queued"
+    assert not output.exists()
+    assert (settings.runtime_dir / payload["id"] / "test.las").is_file()
+
+
+def test_database_and_sessions_survive_restart_and_incomplete_uploads_fail(application):
+    app, client, settings = application
+    _, cookies = register(client)
+    queued = client.post("/api/conversions?filename=test.las&name=Queued", content=las_bytes()).json()
+    interrupted = client.post("/api/conversions?filename=test.las&name=Interrupted", content=las_bytes()).json()
+    with app.state.database.session() as session:
+        session.get(ProcessingJob, uuid.UUID(interrupted["id"])).status = "uploading"
+        session.get(Cloud, uuid.UUID(interrupted["cloudId"])).status = "uploading"
+        session.commit()
+    with TestClient(create_app(settings)) as restarted:
+        use_cookies(restarted, cookies)
+        assert restarted.get("/api/auth/me").status_code == 200
+        assert restarted.get(f"/api/jobs/{queued['id']}").json()["status"] == "queued"
+        assert restarted.get(f"/api/jobs/{interrupted['id']}").json()["status"] == "failed"
+        assert len(restarted.get("/api/clouds").json()["clouds"]) == 2
+    assert (settings.runtime_dir / queued["id"] / "test.las").exists()
+    assert not (settings.runtime_dir / interrupted["id"]).exists()
+
+
+def test_restart_finishes_interrupted_deletion(application):
+    app, client, settings = application
+    owner, cookies = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    with app.state.database.session() as session:
+        session.get(Cloud, uuid.UUID(identifier)).status = "deleting"
+        session.commit()
+    with TestClient(create_app(settings)) as restarted:
+        use_cookies(restarted, cookies)
+        assert restarted.get(f"/api/clouds/{identifier}").status_code == 404
+    assert not directory.exists()
+
+
+def test_worker_failure_is_persisted_and_partial_output_is_removed(application, monkeypatch):
+    app, client, settings = application
+    register(client)
+    payload = client.post("/api/conversions?filename=test.las&name=Failed", content=las_bytes()).json()
+    worker = Worker(settings, app.state.database)
+    def fail(*_args, **_kwargs):
+        raise ValueError("Testowana awaria konwertera")
+    monkeypatch.setattr(worker, "run_command", fail)
+    worker.process(worker.claim_next())
+    job = client.get(f"/api/jobs/{payload['id']}").json()
+    cloud = client.get(f"/api/clouds/{payload['cloudId']}").json()
+    assert job["status"] == "failed" and cloud["status"] == "failed"
+    assert "Testowana awaria" in job["error"]
+    assert not (settings.clouds_dir / payload["cloudId"]).exists()
+
+
+def test_stopping_worker_preserves_input_and_requeues_job(application, monkeypatch):
+    app, client, settings = application
+    register(client)
+    payload = client.post("/api/conversions?filename=test.las&name=Interrupted", content=las_bytes()).json()
+    worker = Worker(settings, app.state.database)
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(worker, "run_command", interrupt)
+    worker.process(worker.claim_next())
+    assert worker.stopped()
+    assert client.get(f"/api/jobs/{payload['id']}").json()["status"] == "queued"
+    assert (settings.runtime_dir / payload["id"] / "test.las").is_file()
+
+
+def test_owner_is_required_to_process_public_cloud_and_timestamps_include_timezone(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, _ = seed_cloud(app, settings, owner, visibility="public")
+    metadata = client.get(f"/api/clouds/{identifier}").json()
+    assert metadata["createdAt"].endswith(("Z", "+00:00"))
+    register(client, "other@example.com")
+    response = client.post("/api/point-removals", json={"sourceCloud": identifier, "name": "Not mine",
+        "selections": [{"position": [0, 0, 0], "radius": 1}]})
+    assert response.status_code == 404
+
+
+def test_real_converter_and_processing_round_trip(application):
+    app, client, settings = application
+    if not settings.converter.is_file() or not settings.laszip.is_file():
+        pytest.skip("Bundled converter and LASzip are needed for this integration test")
+    register(client)
+    upload = client.post("/api/clouds", data={"name": "Rzeczywista konwersja"},
+                         files={"file": ("test.las", las_bytes(5000), "application/octet-stream")})
+    assert upload.status_code == 202, upload.text
+    worker = Worker(settings, app.state.database)
+    worker.process(worker.claim_next())
+    first_job = client.get(f"/api/jobs/{upload.json()['id']}").json()
+    assert first_job["status"] == "completed", first_job
+    assert client.get(first_job["pointCloudUrl"]).status_code == 200
+    identifier = upload.json()["cloudId"]
+    operations = [
+        ("transformations", {"translation": [1, 0, 0], "rotationDegrees": [0, 0, 0], "scale": [1, 1, 1]}),
+        ("segmentations", {"mode": "inside", "sourceToBoxMatrix": [.02,0,0,0,0,.02,0,0,0,0,.02,0,-.2,-.2,-.1,1],
+            "clipBox": {"matrixWorld": [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1], "position": [0,0,0],
+                "rotation": [0,0,0], "scale": [50,50,50], "pointCloudMatrixWorld": [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+                "pointCloudOffset": [0,0,0]}}),
+        ("point-removals", {"selections": [{"position": [0,0,0], "radius": .5}]}),
+    ]
+    for operation, parameters in operations:
+        response = client.post(f"/api/{operation}", json={"name": operation, "sourceCloud": identifier, **parameters})
+        assert response.status_code == 202, response.text
+        worker.process(worker.claim_next())
+        result = client.get(f"/api/jobs/{response.json()['id']}").json()
+        assert result["status"] == "completed", result
+        derived = client.get(f"/api/clouds/{result['cloudId']}").json()
+        assert derived["parentCloud"] == identifier and derived["sourceAvailable"]

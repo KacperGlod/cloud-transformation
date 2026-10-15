@@ -4,6 +4,10 @@
 /360
 node_modules
 .runtime/
+/data/
+/.venv/
+/.pytest_cache/
+.env
 /pointclouds/
 __pycache__/
 *.py[cod]
