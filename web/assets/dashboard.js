@@ -55,7 +55,9 @@ function render() {
     statusCell.append(badge(cloud.status));
     if (cloud.error) statusCell.title = cloud.error;
     const visibility = element("td", "visibility", cloud.visibility === "public" ? "◉ Publiczna" : "◈ Prywatna");
-    const date = new Date(cloud.createdAt).toLocaleDateString("pl-PL", {day: "2-digit", month: "short", year: "numeric"});
+    const date = new Date(cloud.createdAt).toLocaleString("pl-PL", {
+      day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+    });
     const actionsCell = element("td");
     const actions = element("div", "row-actions");
     if (cloud.status === "ready") {
