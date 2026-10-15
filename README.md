@@ -1,174 +1,177 @@
 # Cloud Transformation
 
-Prosty, pełnoekranowy viewer chmur punktów oparty na Potree 1.8. Projekt
-uruchamia jeden widok z pliku `index.html`, pozwala przesyłać pliki LAS/LAZ
-i konwertuje je lokalnie za pomocą PotreeConverter.
+A simple, full-screen point cloud viewer based on Potree 1.8. The project
+uses `index.html` as its main view, supports LAS/LAZ uploads, and converts
+files locally using PotreeConverter.
 
-## Uruchomienie
+## Getting started
 
-Zainstaluj zależności:
+Install the dependencies:
 
 ```powershell
 npm.cmd install
 ```
 
-Uruchom lokalny serwer:
+Start the local server:
 
 ```powershell
 npm.cmd start
 ```
 
-Viewer i lokalne API konwersji będą dostępne pod adresem:
+The viewer and local conversion API will be available at:
 
     http://localhost:1234/
 
-Na systemie bez blokady skryptów PowerShell można używać standardowych
-poleceń `npm install` i `npm start`.
+If your PowerShell execution policy allows scripts, you can use the standard
+`npm install` and `npm start` commands.
 
-## Swobodny lot WSAD
+## WASD free flight
 
-Kliknij **ikonę samolotu** w lewym dolnym rogu viewera, aby od razu rozpocząć lot.
-Mysz zostanie przechwycona, a kamera przełączy się na widok perspektywiczny.
-Instrukcja sterowania pozostaje widoczna przez cały lot. Sterowanie działa jak w grach:
+Click the **airplane icon** in the bottom-left corner of the viewer to start
+flying immediately. The mouse pointer will be locked, and the camera will switch
+to perspective view. The control instructions remain visible throughout the
+flight. Movement uses game-style controls:
 
-- **W / S** — lot do przodu / do tyłu w kierunku, w którym patrzysz;
-- **A / D** — lot w lewo / w prawo;
-- **mysz** — rozglądanie bez trzymania przycisku;
-- **Spacja lub E** — lot w górę;
-- **Ctrl lub Q** — lot w dół;
-- **Shift** — trzykrotnie szybszy lot;
-- **kółko myszy** — zwiększanie / zmniejszanie prędkości;
-- **Esc** — zakończenie lotu i powrót do poprzedniego sterowania.
+- **W / S** — fly forward / backward along the viewing direction;
+- **A / D** — fly left / right;
+- **mouse** — look around without holding a button;
+- **Space or E** — fly up;
+- **Ctrl or Q** — fly down;
+- **Shift** — fly three times faster;
+- **mouse wheel** — increase / decrease speed;
+- **Esc** — stop flying and restore the previous controls.
 
-Prędkość jest podawana w jednostkach współrzędnych chmury na sekundę. Możesz
-latać swobodnie w przestrzeni, bez grawitacji i kolizji. Lot zatrzymuje się również
-po przełączeniu okna lub karty; ponowne wejście wymaga kliknięcia ikony samolotu.
-Po zakończeniu lotu instrukcja znika. Klikanie w widoku podczas lotu pozostawia
-instrukcję widoczną; klawisz **Esc** kończy lot i przywraca zwykłe sterowanie.
+Speed is measured in point cloud coordinate units per second. You can move
+freely through space without gravity or collisions. Flight also stops when you
+switch windows or tabs; click the airplane icon to resume. The instructions
+disappear when flight ends. Clicking inside the viewer during flight keeps the
+instructions visible; press **Esc** to stop flying and restore normal controls.
 
-## Import LAS/LAZ
+## LAS/LAZ import
 
-PotreeConverter powinien znajdować się tutaj:
+PotreeConverter should be located at:
 
 ```text
 tools/PotreeConverter/PotreeConverter.exe
 ```
 
-Po uruchomieniu projektu:
+After starting the project:
 
-1. Kliknij `Dodaj LAS/LAZ` w prawym górnym rogu.
-2. Wybierz plik `.las` lub `.laz`.
-3. Podaj unikalną nazwę chmury.
-4. Kliknij `Prześlij i konwertuj`.
+1. Open the LAS/LAZ upload dialog in the top-right corner.
+2. Select a `.las` or `.laz` file.
+3. Enter a unique point cloud name.
+4. Click the button to upload and convert the file.
 
-Plik jest przesyłany wyłącznie do lokalnego serwera na tym komputerze.
-PotreeConverter zapisuje wynik w `pointclouds/<nazwa>/`, a viewer automatycznie
-wczytuje wygenerowany plik `metadata.json`. Konwersje wykonywane są pojedynczo,
-aby nie przeciążać komputera.
+The file is uploaded only to the local server on your computer.
+PotreeConverter saves the output in `pointclouds/<name>/`, and the viewer
+automatically loads the generated `metadata.json` file. Conversions run one
+at a time to avoid overloading the computer.
 
-Po udanej konwersji katalog chmury zawiera również oryginalny plik LAS/LAZ
-pod jego pierwotną nazwą oraz pełny zapis działania PotreeConvertera w pliku
-`conversion.log`. Plik `cloud-info.json` przechowuje lokalne informacje o
-pochodzeniu chmury i przygotowuje projekt do późniejszego podłączenia kont oraz
-bazy danych.
+After a successful conversion, the point cloud directory also contains the
+original LAS/LAZ file under its original name and the complete PotreeConverter
+output in `conversion.log`. The `cloud-info.json` file stores local information
+about the point cloud's origin and provides a foundation for future account
+and database integration.
 
-## Wycinanie fragmentu chmury
+## Point cloud segmentation
 
-Segmentacja działa lokalnie i wymaga chmury, która ma zachowany oryginalny plik
-LAS lub LAZ. Do odczytu i zapisu punktów wykorzystywana jest biblioteka
-`tools/PotreeConverter/laszip.dll`, a skrypt segmentacji uruchamia systemowy
-Python 3.
+Segmentation runs locally and requires a point cloud with its original LAS or
+LAZ file preserved. Points are read and written using
+`tools/PotreeConverter/laszip.dll`, and the segmentation script runs with the
+system's Python 3 installation.
 
-1. Wczytaj chmurę źródłową.
-2. Otwórz panel `Chmury i segmentacja`.
-3. Kliknij `Dodaj box`, a następnie ustaw jego pozycję, obrót i skalę w Potree.
-4. Wybierz zachowanie punktów wewnątrz albo poza clipping boxem.
-5. Podaj unikalną nazwę wynikowej chmury i kliknij `Wytnij i przekonwertuj`.
+1. Load the source point cloud.
+2. Open the cloud processing panel.
+3. Add a clipping box, then adjust its position, rotation, and scale in Potree.
+4. Choose whether to keep points inside or outside the clipping box.
+5. Enter a unique output name and start segmentation and conversion.
 
-Serwer wybiera punkty z oryginalnego LAS/LAZ, zapisuje wynik jako
-`pointclouds/<nazwa>/<nazwa>.laz`, uruchamia PotreeConverter i automatycznie
-wczytuje nową chmurę. Segmentacja obsługuje również obrócone clipping boxy.
+The server selects points from the original LAS/LAZ file, saves the result as
+`pointclouds/<name>/<name>.laz`, runs PotreeConverter, and automatically loads
+the new point cloud. Segmentation also supports rotated clipping boxes.
 
-Katalog wynikowy zawiera:
+The output directory contains:
 
-- wynikowy plik LAZ;
-- dane Potree (`metadata.json`, `octree.bin`, `hierarchy.bin`);
-- `segmentation.log` oraz `conversion.log`;
-- `cloud-info.json` z nazwą chmury źródłowej, trybem `inside`/`outside`,
-  transformacją clipping boxa i liczbą wybranych punktów.
+- the resulting LAZ file;
+- Potree data (`metadata.json`, `octree.bin`, `hierarchy.bin`);
+- `segmentation.log` and `conversion.log`;
+- `cloud-info.json` with the source point cloud name, the `inside`/`outside`
+  mode, the clipping box transformation, and the number of selected points.
 
-Chmury bez oryginalnego LAS/LAZ nadal można wyświetlać, ale przycisk
-segmentacji będzie dla nich nieaktywny.
+Point clouds without an original LAS/LAZ file can still be viewed, but
+segmentation is disabled for them.
 
-## Ręczne usuwanie punktów z sąsiedztwem
+## Manual point removal with a brush
 
-Narzędzie pędzla pozwala usuwać małe, nieregularne fragmenty bez używania
-clipping boxa. Każde kliknięcie wskazuje rzeczywisty punkt chmury i tworzy
-wokół niego sferyczne zaznaczenie o podanym promieniu.
+The brush tool removes small, irregular regions without a clipping box.
+Each click picks an actual point in the cloud and creates a spherical
+selection around it with the specified radius.
 
-1. Wczytaj chmurę z zachowanym plikiem źródłowym LAS/LAZ.
-2. W sekcji `Usuń punkty z sąsiedztwem` ustaw promień.
-3. Kliknij `Wybierz punkty w widoku`, a następnie klikaj niepasujące punkty.
-   Przeciąganie nadal obraca widok, a klawisz `Esc` kończy wybieranie.
-4. Otwórz panel ponownie. W razie potrzeby cofnij ostatnie zaznaczenie albo
-   wyczyść wszystkie.
-5. Podaj nazwę wyniku i kliknij `Usuń zaznaczone i przekonwertuj`.
+1. Load a point cloud with its source LAS/LAZ file preserved.
+2. Set the brush radius in the point removal section.
+3. Activate point picking in the viewer, then click the unwanted points.
+   Dragging still rotates the view, and `Esc` ends point picking.
+4. Reopen the panel. If needed, undo the last selection or clear all selections.
+5. Enter an output name and start removal and conversion.
 
-Czerwone kule są tylko podglądem. Podczas zapisu serwer usuwa z oryginalnego
-LAS/LAZ wszystkie punkty znajdujące się wewnątrz co najmniej jednej zaznaczonej
-kuli, zapisuje nowy LAZ i uruchamia PotreeConverter. Oryginał pozostaje bez
-zmian. `cloud-info.json` zachowuje środki i promienie zaznaczeń, statystyki oraz
-powiązanie z chmurą źródłową, a pełny przebieg trafia do
-`point-removal.log` i `conversion.log`.
+The red spheres are a preview. When saving, the server removes every point
+inside at least one selected sphere from the source LAS/LAZ data, writes a new
+LAZ file, and runs PotreeConverter. The original file remains unchanged.
+`cloud-info.json` records the selection centers and radii, statistics, and
+the link to the source point cloud. Full logs are saved in
+`point-removal.log` and `conversion.log`.
 
-## Transformacje współrzędnych
+## Coordinate transformations
 
-Transformacje działają lokalnie bez PDAL. Skrypt
-`tools/transform_pointcloud.py` odczytuje i zapisuje punkty przez dołączoną
-bibliotekę `laszip.dll`, dlatego zachowuje atrybuty punktów oraz obsługuje pliki
-LAS i LAZ.
+Transformations run locally without PDAL. The
+`tools/transform_pointcloud.py` script reads and writes points through the
+bundled `laszip.dll` library, preserving point attributes and supporting
+both LAS and LAZ files.
 
-1. Wczytaj chmurę, która ma zachowany plik źródłowy LAS/LAZ.
-2. Otwórz panel `Chmury i przetwarzanie`.
-3. W sekcji `Transformuj chmurę` wpisz przesunięcie XYZ, obrót XYZ w stopniach
-   oraz skalę XYZ.
-4. Wybierz punkt odniesienia: środek granic chmury, początek układu albo własne
-   współrzędne.
-5. Podaj unikalną nazwę wyniku i kliknij `Transformuj i przekonwertuj`.
+1. Load a point cloud with its source LAS/LAZ file preserved.
+2. Open the cloud processing panel.
+3. In the transformation section, enter the XYZ translation, XYZ rotation
+   in degrees, and XYZ scale.
+4. Choose a pivot: the center of the cloud's bounding box, the coordinate
+   origin, or custom coordinates.
+5. Enter a unique output name and start transformation and conversion.
 
-Obroty są wykonywane kolejno wokół osi X, Y i Z. Serwer wykonuje dwa przebiegi
-po punktach: najpierw oblicza nowe granice i bezpieczny offset nagłówka LAS,
-a następnie zapisuje przeliczone współrzędne do nowego LAZ. Oryginalna chmura
-nie jest modyfikowana.
+Rotations are applied around the X, Y, and Z axes in that order. The server
+makes two passes over the points: first, it calculates the new bounds and a
+safe LAS header offset; then, it writes the transformed coordinates to a new
+LAZ file. The original point cloud remains unchanged.
 
-Katalog wynikowy zawiera wynikowy LAZ, dane Potree, `transformation.log`,
-`conversion.log` oraz `cloud-info.json`. W metadanych zachowywane są parametry,
-rzeczywisty punkt odniesienia, granice wejściowe i wynikowe, skala zapisu,
-offset oraz powiązanie z chmurą źródłową.
+The output directory contains the resulting LAZ file, Potree data,
+`transformation.log`, `conversion.log`, and `cloud-info.json`. The metadata
+records the parameters, the actual pivot, input and output bounds, the
+coordinate storage scale and offset, and the link to the source point cloud.
 
-Ta operacja jest transformacją liczbową w bieżącym układzie współrzędnych. Nie
-wykonuje reprojekcji pomiędzy układami geodezyjnymi, np. PL-2000 i WGS84.
+This operation transforms coordinates within the current coordinate system.
+It does not reproject data between coordinate reference systems, such as
+PL-2000 and WGS84.
 
-## Ręczna podmiana chmury punktów
+## Manually replacing a point cloud
 
-1. Umieść przekonwertowaną chmurę w katalogu `pointclouds`.
-2. Otwórz `index.html`.
-3. Zmień wartość `POINT_CLOUD_PATH`:
+1. Place the converted point cloud in the `pointclouds` directory.
+2. Open `index.html`.
+3. Change the value of `POINT_CLOUD_PATH`:
 
 ```js
-const POINT_CLOUD_PATH = "./pointclouds/nazwa-chmury/metadata.json";
+const POINT_CLOUD_PATH = "./pointclouds/cloud-name/metadata.json";
 ```
 
-Dla danych z PotreeConverter 1.x wskaż plik `cloud.js`, a dla
-PotreeConverter 2.x plik `metadata.json`.
+For PotreeConverter 1.x output, point to `cloud.js`. For PotreeConverter 2.x
+output, use `metadata.json`.
 
-## Polecenia
+## Commands
 
-- `npm.cmd start` — uruchamia lokalny viewer, upload, segmentację, transformacje i kolejkę
-  PotreeConvertera.
-- `npm.cmd run build` — przebudowuje bibliotekę Potree.
-- `npm.cmd run test:flight` — sprawdza sterowanie lotem i zoom kółkiem myszy (Node.js 22 lub nowszy).
-- `npm.cmd run dev` — przebudowuje bibliotekę i obserwuje jej pliki źródłowe; serwer uruchom osobno przez `npm.cmd start`.
+- `npm.cmd start` — starts the local viewer, upload API, segmentation,
+  transformations, and PotreeConverter queue.
+- `npm.cmd run build` — rebuilds the Potree library.
+- `npm.cmd run test:flight` — checks flight controls and mouse wheel zoom
+  (requires Node.js 22 or later).
+- `npm.cmd run dev` — rebuilds the library and watches its source files;
+  start the server separately with `npm.cmd start`.
 
-Serwer nasłuchuje wyłącznie lokalnie, a pliki robocze uploadu znajdują
-się w ignorowanym przez Git katalogu `.runtime`.
+The server listens only on localhost. Temporary upload files are stored in
+the `.runtime` directory, which is ignored by Git.
