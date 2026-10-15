@@ -534,7 +534,6 @@
 	<script src="./build/potree/potree.js"></script>
 	<script src="./libs/plasio/js/laslaz.js"></script>
 
-	<a href="/" id="library_link" style="position:absolute;top:1rem;left:4rem;z-index:1000;padding:.65rem .9rem;border:1px solid #3b4a53;border-radius:7px;background:#182126ed;color:#edf2f3;text-decoration:none;font:13px 'Segoe UI',sans-serif;">← Biblioteka chmur</a>
 	<div id="viewer_status">Wczytywanie chmury punktów…</div>
 	<div id="point_removal_hint" role="status" hidden>
 		Kliknij niepasujący punkt. Przeciąganie nadal obraca widok. Naciśnij Esc, aby zakończyć wybieranie.
@@ -800,7 +799,9 @@
 		<div
 			id="potree_render_area"
 			style="background-image: url('./build/potree/resources/images/background.jpg');"
-		></div>
+		>
+			<a href="/" id="library_link" style="position:absolute;top:1rem;left:4rem;z-index:1000;padding:.65rem .9rem;border:1px solid #3b4a53;border-radius:7px;background:#182126ed;color:#edf2f3;text-decoration:none;font:13px 'Segoe UI',sans-serif;">← Biblioteka chmur</a>
+		</div>
 		<div id="potree_sidebar_container"></div>
 	</div>
 
