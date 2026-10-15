@@ -1,5 +1,9 @@
 import {api, json, sizeLabel, active, statusLabel, element} from "./common.js";
+import {sortClouds} from "./cloud-sorting.js";
 const byId = id => document.getElementById(id);
+const sortButtons = document.querySelectorAll(".sort-button");
+let sortColumn = "createdAt";
+let sortDirection = "descending";
 let clouds = [];
 let jobs = [];
 let selected = null;
@@ -30,15 +34,29 @@ function badge(status) {
   return element("span", `badge ${active(status) ? "active" : status === "completed" ? "ready" : status}`, statusLabel(status));
 }
 
+function renderSortHeaders() {
+  for (const button of sortButtons) {
+    const selected = button.dataset.sort === sortColumn;
+    const heading = button.closest("th");
+    if (selected) heading.setAttribute("aria-sort", sortDirection);
+    else heading.removeAttribute("aria-sort");
+    button.querySelector(".sort-indicator").textContent = selected ? (sortDirection === "ascending" ? "↑" : "↓") : "↕";
+    const nextDirection = selected && sortDirection === "ascending" ? "malejąco" : "rosnąco";
+    button.setAttribute("aria-label", `${button.querySelector(".sort-label").textContent}: sortuj ${nextDirection}`);
+  }
+}
+
 function render() {
+  renderSortHeaders();
   byId("total_count").textContent = clouds.length;
   byId("ready_count").textContent = clouds.filter(cloud => cloud.status === "ready").length;
   byId("processing_count").textContent = clouds.filter(cloud => active(cloud.status)).length;
   byId("storage_size").textContent = sizeLabel(clouds.reduce((sum, cloud) => sum + cloud.sizeBytes, 0));
   const query = byId("search").value.toLocaleLowerCase("pl");
   const status = byId("status_filter").value;
-  const visible = clouds.filter(cloud => cloud.name.toLocaleLowerCase("pl").includes(query)
+  const matching = clouds.filter(cloud => cloud.name.toLocaleLowerCase("pl").includes(query)
     && (status === "all" || (status === "active" ? active(cloud.status) : cloud.status === status)));
+  const visible = sortClouds(matching, sortColumn, sortDirection);
   byId("list_count").textContent = visible.length;
   byId("cloud_rows").replaceChildren();
   for (const cloud of visible) {
@@ -138,6 +156,13 @@ async function refresh() {
 }
 byId("search").addEventListener("input", render);
 byId("status_filter").addEventListener("change", render);
+for (const button of sortButtons) {
+  button.addEventListener("click", () => {
+    sortDirection = button.dataset.sort === sortColumn && sortDirection === "ascending" ? "descending" : "ascending";
+    sortColumn = button.dataset.sort;
+    render();
+  });
+}
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 
 byId("upload_file").addEventListener("change", () => {

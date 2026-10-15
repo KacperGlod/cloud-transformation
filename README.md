@@ -53,6 +53,12 @@ supports LAS/LAZ uploads, renaming, changing visibility, viewing job logs, and
 deleting a cloud together with its files. Cloud names need not be unique.
 New clouds have UUID identifiers and directories independent of their names.
 
+Click a column heading to sort by name, status, visibility, source file size,
+or upload date; click again to reverse the order. Names use Polish alphabetical
+and natural numeric ordering, and statuses follow their displayed Polish labels.
+File sizes use bytes and dates use their full timestamps. The default is newest
+first. Sorting is preserved while searching, filtering, and polling for updates.
+
 - `private` (default): metadata and files are accessible only to the owner.
 - `public`: anyone with the viewer URL can view the converted cloud. Editing,
   processing, job logs, and original-file downloads still require ownership.
@@ -159,6 +165,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest tests/test_api.py -q
 npm.cmd run test:flight
+npm.cmd run test:library
 ```
 
 API tests use isolated temporary databases and point clouds. They cover account
@@ -306,6 +313,8 @@ cloud from the library. New uploads should normally use the API or upload form.
   and separate processing worker.
 - `npm.cmd run build` — rebuilds the Potree library.
 - `npm.cmd run test:flight` — checks flight controls and mouse wheel zoom
+  (requires Node.js 22 or later).
+- `npm.cmd run test:library` — checks cloud library column sorting
   (requires Node.js 22 or later).
 - `npm.cmd run dev` — rebuilds the library and watches its source files;
   start the server separately with `npm.cmd start`.

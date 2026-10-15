@@ -19,6 +19,7 @@
   "scripts": {
     "start": "node server.js",
     "test:flight": "node --test tests/flight-controls.test.mjs tests/wheel-navigation.test.mjs",
+    "test:library": "node --test tests/cloud-sorting.test.mjs",
     "dev": "gulp watch",
     "build": "gulp build pack",
     "postinstall": "npm run build"
