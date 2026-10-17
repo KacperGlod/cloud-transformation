@@ -84,6 +84,19 @@ function render() {
       open.setAttribute("aria-label", `Otwórz chmurę ${cloud.name}`);
       actions.append(open);
     }
+    const canDownload = cloud.status === "ready" && cloud.sourceAvailable;
+    const download = element(canDownload ? "a" : "button", "quiet download", "Pobierz");
+    download.setAttribute("aria-label", `Pobierz plik LAS/LAZ chmury ${cloud.name}`);
+    if (canDownload) {
+      download.href = `/api/clouds/${cloud.id}/download`;
+      download.download = cloud.sourceFile;
+      download.title = `Pobierz ${cloud.sourceFile}`;
+    } else {
+      download.type = "button";
+      download.disabled = true;
+      download.title = active(cloud.status) ? "Poczekaj na zakończenie przetwarzania" : "Brak pliku źródłowego LAS/LAZ do pobrania";
+    }
+    actions.append(download);
     const edit = element("button", "quiet", "Edytuj");
     edit.type = "button";
     edit.addEventListener("click", () => {

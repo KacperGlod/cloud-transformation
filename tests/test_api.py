@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import struct
 import uuid
+from urllib.parse import quote
 
 from fastapi.testclient import TestClient
 import pytest
@@ -121,6 +122,91 @@ def test_owner_isolation_visibility_and_range_requests(application):
     client.patch(f"/api/clouds/{identifier}", json={"visibility": "private"})
     client.cookies.clear()
     assert client.get(file_url).status_code == 404
+
+
+@pytest.mark.parametrize("extension", ["las", "laz"])
+def test_source_download_preserves_bytes_filename_and_supports_head_and_range(application, extension):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    filename = f"Skan łąki.{extension}"
+    (directory / "original.las").rename(directory / filename)
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        cloud.source_file = filename
+        cloud.name = "Zmieniona nazwa w bibliotece"
+        session.commit()
+    url = f"/api/clouds/{identifier}/download"
+    response = client.get(url)
+    content = (directory / filename).read_bytes()
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.headers["content-disposition"] == f"attachment; filename*=utf-8''{quote(filename)}"
+    assert response.headers["cache-control"] == "private, no-store"
+    head = client.head(url)
+    assert head.status_code == 200 and head.content == b""
+    assert head.headers["content-length"] == str(len(content))
+    assert head.headers["content-disposition"] == response.headers["content-disposition"]
+    partial = client.get(url, headers={"Range": "bytes=2-25"})
+    assert partial.status_code == 206 and partial.content == content[2:26]
+    assert partial.headers["content-range"] == f"bytes 2-25/{len(content)}"
+    assert client.get(url, headers={"Range": f"bytes={len(content)}-"}).status_code == 416
+
+
+@pytest.mark.parametrize("visibility", ["private", "public"])
+def test_source_download_requires_owner_even_for_public_clouds(application, visibility):
+    app, client, settings = application
+    owner, owner_cookies = register(client)
+    identifier, _ = seed_cloud(app, settings, owner, visibility=visibility)
+    url = f"/api/clouds/{identifier}/download"
+    register(client, "other@example.com")
+    assert client.get(url).status_code == 404
+    assert client.head(url).status_code == 404
+    client.cookies.clear()
+    assert client.get(url).status_code == 401
+    assert client.head(url).status_code == 401
+    use_cookies(client, owner_cookies)
+    assert client.get(url).status_code == 200
+
+
+def test_source_download_of_processing_result_returns_its_own_file(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    parent_id, parent_directory = seed_cloud(app, settings, owner)
+    result_id, result_directory = seed_cloud(app, settings, owner, parent=uuid.UUID(parent_id))
+    result_content = las_bytes(3)
+    (result_directory / "original.las").write_bytes(result_content)
+    response = client.get(f"/api/clouds/{result_id}/download")
+    assert response.status_code == 200 and response.content == result_content
+    assert response.content != (parent_directory / "original.las").read_bytes()
+    assert client.get(f"/api/clouds/{parent_id}/download").content == (parent_directory / "original.las").read_bytes()
+
+
+def test_source_download_rejects_missing_files_unready_clouds_and_path_traversal(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    url = f"/api/clouds/{identifier}/download"
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        cloud.status = "converting"
+        session.commit()
+    assert client.get(url).status_code == 409
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        cloud.status = "ready"
+        cloud.source_file = None
+        session.commit()
+    assert not client.get(f"/api/clouds/{identifier}").json()["sourceAvailable"]
+    assert client.get(url).status_code == 404
+    (settings.clouds_dir / "outside.las").write_bytes(b"File outside the cloud directory")
+    for source in ("missing.las", "../outside.las"):
+        with app.state.database.session() as session:
+            session.get(Cloud, uuid.UUID(identifier)).source_file = source
+            session.commit()
+        assert client.get(url).status_code == 404
+    assert (directory / "original.las").is_file()
 
 
 def test_rename_has_stable_id_paths_and_validation(application):

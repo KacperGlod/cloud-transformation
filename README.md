@@ -53,6 +53,13 @@ supports LAS/LAZ uploads, renaming, changing visibility, viewing job logs, and
 deleting a cloud together with its files. Cloud names need not be unique.
 New clouds have UUID identifiers and directories independent of their names.
 
+Use **Pobierz** on a ready cloud to save its preserved LAS/LAZ file to your
+computer. Downloads keep the original file name and require the owner's login,
+including for public clouds. For processing results, this downloads the result's
+LAS/LAZ file. The action is disabled while processing or when no source file is
+available. Files stream directly from the server with HTTP Range support for
+resuming downloads; the browser does not buffer the entire file in JavaScript.
+
 Click a column heading to sort by name, status, visibility, source file size,
 or upload date; click again to reverse the order. Names use Polish alphabetical
 and natural numeric ordering, and statuses follow their displayed Polish labels.
@@ -146,6 +153,7 @@ session cookie for subsequent calls.
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
 | `PATCH /api/clouds/{id}` | Owner changes `name` and/or `visibility` |
 | `DELETE /api/clouds/{id}` | Owner deletes the cloud and its files |
+| `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ as an attachment; supports HEAD and Range |
 | `GET /api/clouds/{id}/files/{path}` | Authorized files, including Range requests |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | Owner's persistent job states and logs |
 | `POST /api/segmentations` | Queue a clipping-box operation |

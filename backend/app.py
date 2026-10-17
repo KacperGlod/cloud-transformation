@@ -347,7 +347,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Nie znaleziono zadania.")
         return job_json(job, session.get(Cloud, job.cloud_id))
 
-    def serve_cloud_file(cloud, asset_path, user):
+    def serve_cloud_file(cloud, asset_path, user, *, download=False):
         if cloud.status != "ready":
             raise HTTPException(409, "Chmura nie jest gotowa do wyświetlenia.")
         if any(part.startswith(".") for part in Path(asset_path).parts) or "\\" in asset_path:
@@ -363,7 +363,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not target.is_file():
             raise HTTPException(404, "Nie znaleziono pliku.")
         # Starlette FileResponse handles HEAD and HTTP Range (206 / 416).
-        return FileResponse(target, headers={"Cache-Control": "private, no-store"})
+        return FileResponse(target, headers={"Cache-Control": "private, no-store"},
+                            filename=target.name if download else None,
+                            media_type="application/octet-stream" if download else None)
+
+    @app.api_route("/api/clouds/{identifier}/download", methods=["GET", "HEAD"])
+    def download_cloud(identifier: str, request: Request, session=Depends(get_session)):
+        user = current_user(request, session)
+        cloud = get_cloud(session, identifier, user, write=True)
+        if not cloud.source_file:
+            raise HTTPException(404, "Brak pliku źródłowego LAS/LAZ do pobrania.")
+        return serve_cloud_file(cloud, cloud.source_file, user, download=True)
 
     @app.api_route("/api/clouds/{identifier}/files/{asset_path:path}", methods=["GET", "HEAD"])
     def cloud_file(identifier: str, asset_path: str, request: Request, session=Depends(get_session)):
