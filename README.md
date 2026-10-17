@@ -50,8 +50,16 @@ unless their `cloud-info.json` explicitly declares `public`.
 
 The library lists the signed-in user's uploads and processing results. It
 supports LAS/LAZ uploads, renaming, changing visibility, viewing job logs, and
-deleting a cloud together with its files. Cloud names need not be unique.
+deleting a cloud's files while retaining its metadata. Cloud names need not be unique.
 New clouds have UUID identifiers and directories independent of their names.
+
+Deletion permanently removes the cloud's LAS/LAZ, Potree files, and temporary
+job directories from the server. Its database record remains with status
+`deleted` and a UTC `deleted_at` timestamp, along with job history and links
+from derived clouds. Deleted clouds are excluded from the library and cannot
+be viewed, downloaded, edited, or processed, including through old public links.
+This does not provide an undo or trash feature. Interrupted deletion is finished
+on the next application startup; failed file cleanup can be retried.
 
 Use **Pobierz** on a ready cloud to save its preserved LAS/LAZ file to your
 computer. Downloads keep the original file name and require the owner's login,
@@ -152,7 +160,7 @@ session cookie for subsequent calls.
 | `POST /api/clouds` | Multipart upload: `file`, `name`, optional `visibility` |
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
 | `PATCH /api/clouds/{id}` | Owner changes `name` and/or `visibility` |
-| `DELETE /api/clouds/{id}` | Owner deletes the cloud and its files |
+| `DELETE /api/clouds/{id}` | Owner permanently removes files and marks the retained cloud record deleted |
 | `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ as an attachment; supports HEAD and Range |
 | `GET /api/clouds/{id}/files/{path}` | Authorized files, including Range requests |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | Owner's persistent job states and logs |
@@ -171,14 +179,17 @@ file URLs under `/pointclouds/` also pass through authorization.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest tests/test_api.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_migrations.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
 ```
 
 API tests use isolated temporary databases and point clouds. They cover account
 sessions, ownership, visibility, Range requests, uploads, stable identifiers,
-deletion, legacy imports, and restart recovery. The integration test uses the
+soft deletion, permanent file cleanup, retained job history, legacy imports,
+and restart recovery. Migration tests verify upgrades from the previous schema,
+metadata consistency, and downgrades without losing existing records.
+The integration test uses the
 bundled converter and LASzip for real import, transformation, segmentation,
 and point-removal jobs; it skips when those tools are unavailable.
 

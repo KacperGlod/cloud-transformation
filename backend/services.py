@@ -5,8 +5,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from .config import Settings
-from .models import Cloud, ProcessingJob, User, iso_utc
-from .storage import child_path, find_source, read_info, validate_potree
+from .models import Cloud, ProcessingJob, User, iso_utc, utcnow
+from .storage import child_path, find_source, read_info, remove_directory, validate_potree
 
 
 ACTIVE_STATUSES = ("uploading", "queued", "processing", "converting", "segmenting", "transforming", "removing")
@@ -17,12 +17,22 @@ def get_cloud(session, identifier: str, user: User | None, *, write=False) -> Cl
         cloud = session.get(Cloud, uuid.UUID(identifier))
     except ValueError:
         cloud = session.scalar(select(Cloud).where(Cloud.storage_key == identifier))
-    if cloud is None or cloud.status == "deleting":
+    if cloud is None or cloud.deleted_at is not None or cloud.status in ("deleting", "deleted"):
         raise HTTPException(404, "Nie znaleziono chmury.")
     owns = user is not None and cloud.owner_id == user.id
     if (write and not owns) or (not owns and cloud.visibility != "public"):
         raise HTTPException(404, "Nie znaleziono chmury.")
     return cloud
+
+
+def finish_cloud_deletion(session, cloud: Cloud, settings: Settings) -> None:
+    """Remove files before marking the retained record deleted; caller commits."""
+    remove_directory(settings.clouds_dir, cloud.storage_key)
+    for job_id in session.scalars(select(ProcessingJob.id).where(ProcessingJob.cloud_id == cloud.id)):
+        remove_directory(settings.runtime_dir, str(job_id))
+    cloud.status = "deleted"
+    cloud.deleted_at = utcnow()
+    cloud.error = None
 
 
 def cloud_json(cloud: Cloud, user: User | None, settings: Settings) -> dict:

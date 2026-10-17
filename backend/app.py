@@ -19,7 +19,7 @@ from .config import Settings
 from .database import Database
 from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
 from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, Credentials, JobList, JobRead, PointRemoval, Segmentation, Transformation, Visibility
-from .services import ACTIVE_STATUSES, cloud_json, create_job, get_cloud, import_legacy, job_json
+from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, import_legacy, job_json
 from .storage import child_path, remove_directory
 
 
@@ -38,18 +38,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     import_legacy(session, settings, owner)
                 # A disconnected upload cannot be resumed as a valid complete LAS/LAZ.
                 for job in session.scalars(select(ProcessingJob).where(ProcessingJob.status == "uploading")):
+                    cloud = session.get(Cloud, job.cloud_id)
+                    if cloud.deleted_at is not None or cloud.status in ("deleting", "deleted"):
+                        continue
                     job.status = "failed"
                     job.error = "Przesyłanie przerwano. Prześlij plik ponownie."
-                    cloud = session.get(Cloud, job.cloud_id)
                     cloud.status, cloud.error = "failed", job.error
                     remove_directory(settings.runtime_dir, str(job.id))
                 # Finish a deletion interrupted between its database tombstone and file cleanup.
                 for cloud in session.scalars(select(Cloud).where(Cloud.status == "deleting")):
                     try:
-                        remove_directory(settings.clouds_dir, cloud.storage_key)
-                        for job in session.scalars(select(ProcessingJob).where(ProcessingJob.cloud_id == cloud.id)):
-                            remove_directory(settings.runtime_dir, str(job.id))
-                        session.delete(cloud)
+                        finish_cloud_deletion(session, cloud, settings)
                     except OSError as problem:
                         cloud.status, cloud.error = "failed", f"Nie udało się dokończyć usuwania: {problem}"
                 session.commit()
@@ -183,7 +182,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/clouds", response_model=CloudList)
     def clouds(request: Request, session=Depends(get_session)):
         user = current_user(request, session)
-        records = session.scalars(select(Cloud).where(Cloud.owner_id == user.id, Cloud.status != "deleting")
+        records = session.scalars(select(Cloud).where(Cloud.owner_id == user.id, Cloud.deleted_at.is_(None),
+                                  Cloud.status.not_in(("deleting", "deleted")))
                                   .order_by(Cloud.created_at.desc()))
         return {"clouds": [cloud_json(cloud, user, settings) for cloud in records]}
 
@@ -225,11 +225,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cloud.status = "deleting"
         session.commit()
         try:
-            remove_directory(settings.clouds_dir, cloud.storage_key)
-            jobs = session.scalars(select(ProcessingJob).where(ProcessingJob.cloud_id == cloud.id))
-            for job in jobs:
-                remove_directory(settings.runtime_dir, str(job.id))
-            session.delete(cloud)
+            finish_cloud_deletion(session, cloud, settings)
             session.commit()
         except OSError as problem:
             session.rollback()

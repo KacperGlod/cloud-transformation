@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 import json
 import struct
 import uuid
@@ -10,7 +11,7 @@ from sqlalchemy import select
 
 from backend.app import create_app
 from backend.config import Settings
-from backend.models import Cloud, ProcessingJob, User
+from backend.models import Cloud, ProcessingJob, User, iso_utc, utcnow
 from backend.worker import Worker
 
 
@@ -52,6 +53,19 @@ def seed_cloud(app, settings, owner, *, visibility="private", parent=None, key=N
             size_bytes=100)
         session.add(cloud)
         session.commit()
+    return str(identifier), directory
+
+
+def seed_completed_job(app, settings, owner, cloud_id):
+    identifier = uuid.uuid4()
+    with app.state.database.session() as session:
+        session.add(ProcessingJob(id=identifier, cloud_id=uuid.UUID(cloud_id), owner_id=uuid.UUID(owner["id"]),
+            kind="import", status="completed", progress=100, parameters={"test": True},
+            result={"pointCount": 10}, log="Konwersja zakończona"))
+        session.commit()
+    directory = settings.runtime_dir / str(identifier)
+    directory.mkdir()
+    (directory / "temporary.las").write_bytes(las_bytes())
     return str(identifier), directory
 
 
@@ -262,8 +276,96 @@ def test_delete_preserves_derived_cloud_and_other_files(application):
     assert client.delete(f"/api/clouds/{identifier}").status_code == 204
     assert not directory.exists() and child_directory.exists()
     child = client.get(f"/api/clouds/{child_id}").json()
-    assert child["parentCloud"] is None
+    assert child["parentCloud"] == identifier
     assert client.get(f"/api/clouds/{identifier}").status_code == 404
+    assert client.get(f"/api/clouds/{child_id}/download").status_code == 200
+    with app.state.database.session() as session:
+        assert session.get(Cloud, uuid.UUID(identifier)).status == "deleted"
+
+
+@pytest.mark.parametrize("visibility", ["private", "public"])
+def test_delete_retains_metadata_and_job_history_but_blocks_access(application, visibility):
+    app, client, settings = application
+    owner, owner_cookies = register(client)
+    identifier, directory = seed_cloud(app, settings, owner, visibility=visibility, key="old-cloud-link")
+    job_id, job_directory = seed_completed_job(app, settings, owner, identifier)
+    metadata = client.get(f"/api/clouds/{identifier}").json()
+    before_deletion = utcnow()
+    assert client.delete(f"/api/clouds/{identifier}").status_code == 204
+    assert not directory.exists() and not job_directory.exists()
+    assert client.get("/api/clouds").json() == {"clouds": []}
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        assert cloud.status == "deleted" and cloud.deleted_at is not None
+        assert before_deletion <= datetime.fromisoformat(iso_utc(cloud.deleted_at)) <= utcnow()
+        assert cloud.name == metadata["name"] and str(cloud.owner_id) == owner["id"]
+        assert cloud.source_file == metadata["sourceFile"] and cloud.size_bytes == metadata["sizeBytes"]
+        assert iso_utc(cloud.created_at) == datetime.fromisoformat(metadata["createdAt"].replace("Z", "+00:00")).isoformat()
+        job = session.get(ProcessingJob, uuid.UUID(job_id))
+        assert job.status == "completed" and job.result == {"pointCount": 10}
+        assert job.parameters == {"test": True} and job.log == "Konwersja zakończona"
+    history = client.get(f"/api/jobs/{job_id}").json()
+    assert history["pointCloudUrl"] is None
+    assert client.get("/api/jobs").json()["jobs"] == [history]
+    assert client.patch(f"/api/clouds/{identifier}", json={"name": "Przywrócona"}).status_code == 404
+    assert client.delete(f"/api/clouds/{identifier}").status_code == 404
+    identity = [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]
+    for endpoint, parameters in [
+        ("transformations", {"translation": [0, 0, 0], "rotationDegrees": [0, 0, 0], "scale": [1, 1, 1]}),
+        ("segmentations", {"mode": "inside", "sourceToBoxMatrix": identity,
+            "clipBox": {"matrixWorld": identity, "position": [0, 0, 0], "rotation": [0, 0, 0],
+                        "scale": [1, 1, 1], "pointCloudMatrixWorld": identity, "pointCloudOffset": [0, 0, 0]}}),
+        ("point-removals", {"selections": [{"position": [0, 0, 0], "radius": 1}]}),
+    ]:
+        assert client.post(f"/api/{endpoint}", json={"sourceCloud": identifier, "name": "Wynik", **parameters}).status_code == 404
+    for cookies in (owner_cookies, register(client, "other@example.com")[1], {}):
+        use_cookies(client, cookies)
+        for path in (f"/api/clouds/{identifier}", "/api/clouds/old-cloud-link", f"/viewer?cloud={identifier}",
+                     f"/api/clouds/{identifier}/files/metadata.json", "/pointclouds/old-cloud-link/octree.bin"):
+            assert client.get(path).status_code == 404
+        assert client.head(f"/api/clouds/{identifier}/files/octree.bin").status_code == 404
+        assert client.get(f"/api/clouds/{identifier}/download").status_code == (404 if cookies else 401)
+        assert client.get(f"/api/jobs/{job_id}").status_code == (200 if cookies == owner_cookies else 404 if cookies else 401)
+
+
+def test_failed_file_deletion_keeps_record_and_can_be_retried(application, monkeypatch):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    def fail_removal(*_args):
+        raise PermissionError("Plik jest zajęty")
+    with monkeypatch.context() as patch:
+        patch.setattr("backend.services.remove_directory", fail_removal)
+        assert client.delete(f"/api/clouds/{identifier}").status_code == 409
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        assert cloud.status == "failed" and cloud.deleted_at is None
+        assert "Plik jest zajęty" in cloud.error
+    assert directory.exists() and len(client.get("/api/clouds").json()["clouds"]) == 1
+    assert client.delete(f"/api/clouds/{identifier}").status_code == 204
+    assert not directory.exists()
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        assert cloud.status == "deleted" and cloud.deleted_at is not None and cloud.error is None
+
+
+def test_deleted_timestamp_blocks_access_even_if_status_is_changed(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner, visibility="public")
+    job_id, _ = seed_completed_job(app, settings, owner, identifier)
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        cloud.deleted_at = utcnow()
+        session.get(ProcessingJob, uuid.UUID(job_id)).status = "queued"
+        session.commit()
+    assert client.get("/api/clouds").json() == {"clouds": []}
+    assert client.get(f"/api/clouds/{identifier}").status_code == 404
+    assert client.get(f"/api/clouds/{identifier}/download").status_code == 404
+    client.cookies.clear()
+    assert client.get(f"/api/clouds/{identifier}/files/metadata.json").status_code == 404
+    assert Worker(settings, app.state.database).claim_next() is None
+    assert directory.exists()
 
 
 def test_source_cannot_be_deleted_while_a_job_uses_it(application):
@@ -341,17 +443,60 @@ def test_database_and_sessions_survive_restart_and_incomplete_uploads_fail(appli
     assert not (settings.runtime_dir / interrupted["id"]).exists()
 
 
-def test_restart_finishes_interrupted_deletion(application):
+@pytest.mark.parametrize("files_remaining", [True, False])
+def test_restart_finishes_interrupted_deletion(application, files_remaining):
     app, client, settings = application
     owner, cookies = register(client)
     identifier, directory = seed_cloud(app, settings, owner)
+    job_id, job_directory = seed_completed_job(app, settings, owner, identifier)
+    if not files_remaining:
+        from backend.storage import remove_directory
+        remove_directory(settings.clouds_dir, directory.name)
     with app.state.database.session() as session:
         session.get(Cloud, uuid.UUID(identifier)).status = "deleting"
         session.commit()
     with TestClient(create_app(settings)) as restarted:
         use_cookies(restarted, cookies)
         assert restarted.get(f"/api/clouds/{identifier}").status_code == 404
-    assert not directory.exists()
+        assert restarted.get(f"/api/jobs/{job_id}").status_code == 200
+        assert restarted.get("/api/clouds").json() == {"clouds": []}
+    assert not directory.exists() and not job_directory.exists()
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        deleted_at = cloud.deleted_at
+        assert cloud.status == "deleted" and deleted_at is not None
+    with TestClient(create_app(settings)):
+        pass
+    with app.state.database.session() as session:
+        assert session.get(Cloud, uuid.UUID(identifier)).deleted_at == deleted_at
+
+
+@pytest.mark.parametrize("status", ["deleting", "deleted"])
+def test_worker_does_not_restart_jobs_of_removed_clouds(application, status):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    job_id, job_directory = seed_completed_job(app, settings, owner, identifier)
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(identifier))
+        cloud.status = status
+        cloud.deleted_at = utcnow() if status == "deleted" else None
+        job = session.get(ProcessingJob, uuid.UUID(job_id))
+        job.status = "converting"
+        session.commit()
+    worker = Worker(settings, app.state.database)
+    worker.recover()
+    with app.state.database.session() as session:
+        assert session.get(Cloud, uuid.UUID(identifier)).status == status
+        job = session.get(ProcessingJob, uuid.UUID(job_id))
+        assert job.status == "converting"
+        job.status = "queued"
+        session.commit()
+    assert worker.claim_next() is None
+    worker.process(uuid.UUID(job_id))
+    assert directory.exists() and (job_directory / "temporary.las").is_file()
+    with app.state.database.session() as session:
+        assert session.get(Cloud, uuid.UUID(identifier)).status == status
 
 
 def test_worker_failure_is_persisted_and_partial_output_is_removed(application, monkeypatch):

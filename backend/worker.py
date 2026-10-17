@@ -55,7 +55,7 @@ class Worker:
                 ProcessingJob.status.in_(("processing", "converting", "segmenting", "transforming", "removing")))))
             for job in jobs:
                 cloud = session.get(Cloud, job.cloud_id)
-                if not cloud:
+                if not cloud or cloud.deleted_at is not None or cloud.status in ("deleting", "deleted"):
                     continue
                 self.restore_input(job, cloud)
                 job.status = "queued"
@@ -76,7 +76,9 @@ class Worker:
 
     def claim_next(self):
         with self.database.session() as session:
-            job = session.scalar(select(ProcessingJob).where(ProcessingJob.status == "queued")
+            job = session.scalar(select(ProcessingJob).join(Cloud, ProcessingJob.cloud_id == Cloud.id)
+                                 .where(ProcessingJob.status == "queued", Cloud.deleted_at.is_(None),
+                                        Cloud.status.not_in(("deleting", "deleted")))
                                  .order_by(ProcessingJob.created_at, ProcessingJob.id).limit(1))
             if not job:
                 return None
@@ -159,7 +161,11 @@ class Worker:
     def process(self, job_id):
         with self.database.session() as session:
             job = session.get(ProcessingJob, job_id)
+            if not job:
+                return
             cloud = session.get(Cloud, job.cloud_id)
+            if not cloud or cloud.deleted_at is not None or cloud.status in ("deleting", "deleted"):
+                return
             source = session.get(Cloud, job.source_cloud_id) if job.source_cloud_id else None
         work = child_path(self.settings.runtime_dir, str(job.id))
         output = child_path(self.settings.clouds_dir, cloud.storage_key)
