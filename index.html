@@ -808,6 +808,7 @@
 
 	<script type="module">
 		import * as THREE from "./libs/three.js/build/three.module.js";
+		import {createComparisonLink} from "/assets/comparison-link.js";
 
 		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
 		const LAST_CLOUD_KEY = "cloud-transformation:last-cloud";
@@ -863,6 +864,7 @@
 		const pointRemovalLogDetails = document.getElementById("point_removal_log_details");
 		const pointRemovalHint = document.getElementById("point_removal_hint");
 		const renderArea = document.getElementById("potree_render_area");
+		const comparisonLink = createComparisonLink(importPanel, () => activeCloud);
 
 		const viewer = new Potree.Viewer(renderArea);
 		const flightControls = new Potree.FlightControls(viewer);
@@ -1277,6 +1279,7 @@
 				activePointCloud = loadedPointClouds.get(normalizedUrl);
 				activePointCloud.visible = true;
 				activeCloud = cloudDescriptor;
+				comparisonLink.update();
 				fitActivePointCloud();
 				localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
 				updateSegmentationControls();
@@ -1306,6 +1309,7 @@
 					loadedPointClouds.set(normalizedUrl, pointCloud);
 					activePointCloud = pointCloud;
 					activeCloud = cloudDescriptor;
+					comparisonLink.update();
 					fitActivePointCloud();
 					localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
 					updateSegmentationControls();

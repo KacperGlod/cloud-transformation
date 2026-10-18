@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Porównanie chmur · CloudPoint</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/comparison.css">
+</head>
+<body class="comparison-page">
+  <header class="comparison-header">
+    <div><p class="eyebrow">CLOUDPOINT / PORÓWNANIE</p><h1>Oryginał i wynik</h1></div>
+    <nav aria-label="Powrót"><a id="result_link" hidden>Wróć do wyniku</a><a href="/">Biblioteka chmur</a></nav>
+  </header>
+  <main class="comparison-workspace">
+    <div class="comparison-toolbar">
+      <label><input id="sync_cameras" type="checkbox" checked disabled> Synchronizuj kamery</label>
+      <button id="fit_comparison" class="secondary" type="button" disabled>Dopasuj widok</button>
+      <button id="retry_comparison" class="secondary" type="button" hidden>Spróbuj ponownie</button>
+      <p id="comparison_status" role="status">Wczytywanie porównania…</p>
+    </div>
+    <p class="comparison-help">Obracaj i przybliżaj dowolny widok. Chmury zachowują rzeczywiste współrzędne, także po transformacji.</p>
+    <div id="comparison_panes" class="comparison-panes" hidden>
+      <section class="comparison-pane" aria-labelledby="source_heading">
+        <header><span class="pane-label">PRZED OPERACJĄ</span><h2 id="source_heading">Chmura źródłowa</h2></header>
+        <iframe id="source_frame" title="Widok 3D chmury źródłowej"></iframe>
+      </section>
+      <section class="comparison-pane" aria-labelledby="result_heading">
+        <header><span class="pane-label">PO OPERACJI</span><h2 id="result_heading">Wynik</h2></header>
+        <iframe id="result_frame" title="Widok 3D wyniku przetwarzania"></iframe>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="/assets/comparison.js"></script>
+</body>
+</html>

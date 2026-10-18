@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Widok porównania · CloudPoint</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/build/potree/potree.css">
+  <link rel="stylesheet" href="/libs/jquery-ui/jquery-ui.min.css">
+  <style>
+    html,body,#potree_render_area{position:absolute;inset:0;margin:0;overflow:hidden;font-family:'Segoe UI',sans-serif}
+    #view_status{position:absolute;z-index:1000;top:12px;left:12px;right:12px;padding:12px;background:#182126ed;color:#edf2f3;border-radius:6px;font-size:12px;line-height:1.5}
+    #view_status[data-kind="error"]{color:#ff9ba5}
+    #potree_render_area canvas:focus-visible{outline:2px solid #93dfc0;outline-offset:-3px}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <script src="/libs/jquery/jquery-3.1.1.min.js"></script>
+  <script src="/libs/spectrum/spectrum.js"></script>
+  <script src="/libs/jquery-ui/jquery-ui.min.js"></script>
+  <script src="/libs/other/BinaryHeap.js"></script>
+  <script src="/libs/tween/tween.min.js"></script>
+  <script src="/libs/d3/d3.js"></script>
+  <script src="/libs/proj4/proj4.js"></script>
+  <script src="/build/potree/potree.js"></script>
+  <script src="/libs/plasio/js/laslaz.js"></script>
+  <div id="potree_render_area"></div>
+  <p id="view_status" role="status">Wczytywanie chmury punktów…</p>
+  <script type="module" src="/assets/comparison-view.js"></script>
+</body>
+</html>

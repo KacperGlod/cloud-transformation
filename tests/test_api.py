@@ -71,6 +71,78 @@ def seed_completed_job(app, settings, owner, cloud_id):
     return str(identifier), directory
 
 
+def test_comparison_uses_immediate_source_and_keeps_files_private(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    original, _ = seed_cloud(app, settings, owner)
+    intermediate, _ = seed_cloud(app, settings, owner, parent=uuid.UUID(original))
+    result, _ = seed_cloud(app, settings, owner, parent=uuid.UUID(intermediate))
+    response = client.get(f"/api/clouds/{result}/comparison")
+    assert response.status_code == 200
+    assert response.json()["source"]["id"] == intermediate
+    assert response.json()["result"]["id"] == result
+    assert client.get(f"/compare?cloud={result}").status_code == 200
+    assert client.get(f"/compare/view?cloud={intermediate}").status_code == 200
+    assert client.get(f"/compare/view?cloud={result}").status_code == 200
+    client.cookies.clear()
+    assert client.get(f"/api/clouds/{result}/comparison").status_code == 404
+    assert client.get(f"/compare/view?cloud={result}").status_code == 404
+
+
+def test_public_result_cannot_expose_a_private_comparison_source(application):
+    app, client, settings = application
+    owner, cookies = register(client)
+    source, _ = seed_cloud(app, settings, owner)
+    result, _ = seed_cloud(app, settings, owner, parent=uuid.UUID(source), visibility="public")
+    _, other_cookies = register(client, "comparison-other@example.com")
+    assert client.get(f"/api/clouds/{result}").status_code == 200
+    assert client.get(f"/api/clouds/{result}/comparison").status_code == 404
+    assert client.get(f"/compare/view?cloud={source}").status_code == 404
+    use_cookies(client, cookies)
+    assert client.patch(f"/api/clouds/{source}", json={"visibility": "public"}).status_code == 200
+    for account_cookies in (other_cookies, {}):
+        use_cookies(client, account_cookies)
+        response = client.get(f"/api/clouds/{result}/comparison")
+        assert response.status_code == 200
+        for cloud in response.json().values():
+            assert cloud["canEdit"] is False
+            assert cloud["sourceAvailable"] is False
+            assert cloud["sourceFile"] is None
+            assert cloud["operation"] is None
+        assert client.get(f"/compare/view?cloud={source}").status_code == 200
+        assert client.get(f"/api/clouds/{source}/download").status_code == (404 if account_cookies else 401)
+
+
+@pytest.mark.parametrize("state", ["queued", "failed", "deleted"])
+def test_comparison_rejects_unavailable_source(application, state):
+    app, client, settings = application
+    owner, _ = register(client)
+    source, _ = seed_cloud(app, settings, owner)
+    result, _ = seed_cloud(app, settings, owner, parent=uuid.UUID(source))
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(source))
+        cloud.status = state
+        if state == "deleted":
+            cloud.deleted_at = utcnow()
+        session.commit()
+    expected = 404 if state == "deleted" else 409
+    assert client.get(f"/api/clouds/{result}/comparison").status_code == expected
+    assert client.get(f"/compare/view?cloud={source}").status_code == expected
+    assert client.get(f"/api/clouds/{result}").status_code == 200
+
+
+def test_comparison_rejects_imports_and_unfinished_results(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    source, _ = seed_cloud(app, settings, owner)
+    assert client.get(f"/api/clouds/{source}/comparison").status_code == 409
+    result, _ = seed_cloud(app, settings, owner, parent=uuid.UUID(source))
+    with app.state.database.session() as session:
+        session.get(Cloud, uuid.UUID(result)).status = "converting"
+        session.commit()
+    assert client.get(f"/api/clouds/{result}/comparison").status_code == 409
+
+
 def las_bytes(count=10):
     header = bytearray(227)
     header[:4] = b"LASF"

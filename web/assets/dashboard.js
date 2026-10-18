@@ -118,6 +118,19 @@ function render() {
       open.href = cloud.viewerUrl;
       open.setAttribute("aria-label", `Otwórz chmurę ${cloud.name}`);
       actions.append(open);
+      if (cloud.parentCloud) {
+        const sourceReady = clouds.some(source => source.id === cloud.parentCloud && source.status === "ready");
+        const compare = element(sourceReady ? "a" : "button", "quiet", "Porównaj");
+        compare.setAttribute("aria-label", `Porównaj chmurę ${cloud.name} z oryginałem`);
+        if (sourceReady) {
+          compare.href = `/compare?cloud=${encodeURIComponent(cloud.id)}`;
+        } else {
+          compare.type = "button";
+          compare.disabled = true;
+          compare.title = "Chmura źródłowa jest niedostępna lub nie jest gotowa";
+        }
+        actions.append(compare);
+      }
     }
     const canDownload = cloud.status === "ready" && cloud.sourceAvailable;
     const download = element(canDownload ? "a" : "button", "quiet download", "Pobierz");

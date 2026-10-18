@@ -79,6 +79,11 @@ class CloudList(BaseModel):
     clouds: list[CloudRead]
 
 
+class ComparisonRead(BaseModel):
+    source: CloudRead
+    result: CloudRead
+
+
 class JobRead(BaseModel):
     id: UUID
     cloudId: UUID

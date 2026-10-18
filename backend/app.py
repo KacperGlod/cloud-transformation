@@ -19,8 +19,8 @@ from .config import Settings
 from .database import Database
 from .formats import MAX_HEADER_BYTES, NORMALIZED_EXTENSIONS, SOURCE_EXTENSIONS, validate_source_header
 from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
-from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, Credentials, JobList, JobRead, PasswordChange, PointRemoval, Segmentation, Transformation, Visibility
-from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, import_legacy, job_json
+from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, ComparisonRead, Credentials, JobList, JobRead, PasswordChange, PointRemoval, Segmentation, Transformation, Visibility
+from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, get_comparison, import_legacy, job_json
 from .storage import child_path, download_filename, remove_directory
 
 
@@ -202,6 +202,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def cloud_detail(identifier: str, request: Request, session=Depends(get_session)):
         user = current_user(request, session, required=False)
         return cloud_json(get_cloud(session, identifier, user), user, settings)
+
+    @app.get("/api/clouds/{identifier}/comparison", response_model=ComparisonRead)
+    def cloud_comparison(identifier: str, request: Request, session=Depends(get_session)):
+        user = current_user(request, session, required=False)
+        source, result = get_comparison(session, identifier, user)
+        return {"source": cloud_json(source, user, settings), "result": cloud_json(result, user, settings)}
 
     @app.patch("/api/clouds/{identifier}", response_model=CloudRead)
     def update_cloud(identifier: str, body: CloudUpdate, request: Request, session=Depends(get_session)):
@@ -419,6 +425,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         elif not user:
             return RedirectResponse("/login", status_code=303)
         return FileResponse(settings.root / "index.html")
+
+    @app.get("/compare", include_in_schema=False)
+    def comparison_page():
+        return FileResponse(settings.root / "web" / "compare.html")
+
+    @app.get("/compare/view", include_in_schema=False)
+    def comparison_view(request: Request, cloud: str, session=Depends(get_session)):
+        user = current_user(request, session, required=False)
+        record = get_cloud(session, cloud, user)
+        if record.status != "ready" or not record.entry_file:
+            raise HTTPException(409, "Chmura nie jest gotowa do wyświetlenia.")
+        return FileResponse(settings.root / "web" / "compare-view.html")
 
     @app.get("/index.html", include_in_schema=False)
     def old_entry():

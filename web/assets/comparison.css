@@ -1,0 +1,32 @@
+.comparison-page{height:100dvh;min-height:420px;display:flex;flex-direction:column;overflow:hidden}
+.comparison-header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 28px;border-bottom:1px solid var(--line)}
+.comparison-header .eyebrow{margin-bottom:8px}
+.comparison-header h1{font-size:25px;margin:0}
+.comparison-header nav{display:flex;gap:20px;font-size:12px}
+.comparison-header a{color:var(--accent)}
+.comparison-header a:focus-visible{outline:2px solid var(--accent);outline-offset:5px}
+.comparison-workspace{display:flex;flex-direction:column;flex:1;min-height:0;padding:18px 24px 24px}
+.comparison-toolbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.comparison-toolbar label{display:flex;align-items:center;gap:9px;margin:0;cursor:pointer}
+.comparison-toolbar input{width:17px;height:17px;margin:0;accent-color:var(--accent)}
+.comparison-toolbar p{font-size:12px;color:var(--muted);margin:0}
+.comparison-toolbar p[data-kind="error"]{color:var(--red)}
+.comparison-help{font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0 18px}
+.comparison-panes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;flex:1;min-height:0}
+.comparison-pane{display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.comparison-pane header{padding:14px 18px;border-bottom:1px solid var(--line)}
+.comparison-pane h2{font-size:14px;margin-top:7px;overflow-wrap:anywhere}
+.pane-label{font-size:9px;letter-spacing:1.3px;color:var(--accent)}
+.comparison-pane iframe{display:block;width:100%;flex:1;min-height:0;border:0;background:#19242a}
+@media(max-width:700px){
+  .comparison-header{padding:14px 16px;align-items:flex-start;gap:12px}
+  .comparison-header h1{font-size:20px}
+  .comparison-header nav{flex-direction:column;gap:10px;font-size:11px}
+  .comparison-workspace{padding:12px}
+  .comparison-toolbar{gap:10px}
+  .comparison-toolbar p{flex-basis:100%}
+  .comparison-help{font-size:11px;margin:8px 0 10px}
+  .comparison-panes{grid-template-columns:1fr;grid-template-rows:repeat(2,minmax(0,1fr));gap:10px}
+  .comparison-pane header{padding:8px 12px}
+  .comparison-pane h2{font-size:12px;margin-top:3px}
+}

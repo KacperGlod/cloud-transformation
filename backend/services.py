@@ -26,6 +26,17 @@ def get_cloud(session, identifier: str, user: User | None, *, write=False) -> Cl
     return cloud
 
 
+def get_comparison(session, identifier: str, user: User | None) -> tuple[Cloud, Cloud]:
+    """Compare a result with its immediate input, checking access to both clouds."""
+    result = get_cloud(session, identifier, user)
+    if not result.parent_id or result.parent_id == result.id:
+        raise HTTPException(409, "Ta chmura nie ma chmury źródłowej do porównania.")
+    source = get_cloud(session, str(result.parent_id), user)
+    if any(cloud.status != "ready" or not cloud.entry_file for cloud in (source, result)):
+        raise HTTPException(409, "Obie chmury muszą być gotowe do porównania.")
+    return source, result
+
+
 def finish_cloud_deletion(session, cloud: Cloud, settings: Settings) -> None:
     """Remove files before marking the retained record deleted; caller commits."""
     remove_directory(settings.clouds_dir, cloud.storage_key)

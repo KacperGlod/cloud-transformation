@@ -175,6 +175,7 @@ session cookie for subsequent calls.
 | `GET /api/clouds` | Signed-in user's clouds, including pending/failed uploads |
 | `POST /api/clouds` | Multipart upload: `file`, `name`, optional `visibility` |
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
+| `GET /api/clouds/{id}/comparison` | Ready result and its immediate source; requires view access to both |
 | `PATCH /api/clouds/{id}` | Owner changes `name` and/or `visibility` |
 | `DELETE /api/clouds/{id}` | Owner permanently removes files and marks the retained cloud record deleted |
 | `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ/PLY/PTS/PTX as an attachment; supports HEAD and Range |
@@ -198,6 +199,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 .\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
+npm.cmd run test:comparison
 ```
 
 API tests use isolated temporary databases and point clouds. They cover account
@@ -374,6 +376,28 @@ The output directory contains:
 Point clouds without an original LAS/LAZ or normalized working LAZ can still be
 viewed, but segmentation is disabled for them.
 
+## Comparing a result with its source
+
+Choose **Porównaj** on a ready processing result in the library, or open the
+result in the viewer and choose **Porównaj z oryginałem** in the cloud panel.
+`/compare?cloud={result-id}` opens the source on the left and the result on the
+right. The source is the immediate input to that operation; for a chain of
+operations it may itself be an earlier result.
+
+Rotating, panning, and zooming either panel synchronizes the other camera.
+Turn off **Synchronizuj kamery** to navigate independently. **Dopasuj widok**
+frames the combined bounds when synchronized, or each cloud separately when
+independent. Real coordinates are preserved, so transformations remain visible
+instead of being automatically aligned. On narrow screens the panels are
+stacked vertically. Each panel has a 500,000-point rendering budget.
+
+Both clouds must be ready and accessible. Publishing a result does not grant
+access to its private source. Deleted sources cannot be compared; the result
+remains available on its own. Comparison is read-only and does not create or
+modify point-cloud files. Two isolated viewer frames reuse Potree without
+changing its rendering library; camera messages are restricted to those frames
+on the same origin.
+
 ## Manual point removal with a brush
 
 The brush tool removes small, irregular regions without a clipping box.
@@ -440,6 +464,8 @@ cloud from the library. New uploads should normally use the API or upload form.
   (requires Node.js 22 or later).
 - `npm.cmd run test:library` — checks cloud library column sorting
   (requires Node.js 22 or later).
+- `npm.cmd run test:comparison` — checks camera synchronization, independent
+  navigation, framing, and invalid comparison messages (requires Node.js 22 or later).
 - `npm.cmd run dev` — rebuilds the library and watches its source files;
   start the server separately with `npm.cmd start`.
 
