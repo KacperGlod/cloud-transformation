@@ -55,6 +55,7 @@ class CloudRead(BaseModel):
     format: str
     sourceAvailable: bool
     sourceFile: str | None
+    downloadName: str | None
     parentCloud: str | None
     operation: dict | None
     sizeBytes: int

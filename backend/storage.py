@@ -1,8 +1,23 @@
 """File operations stay outside database transactions and outside the static web root."""
 import json
 from pathlib import Path
+import re
 import shutil
 import struct
+
+
+def download_filename(name: str, source_filename: str) -> str:
+    """Build a portable download name without changing the stored file's format."""
+    extension = Path(source_filename).suffix.lower()
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', "_", name).strip(" .")
+    if stem.lower().endswith((".las", ".laz")):
+        stem = stem[:-4].rstrip(" .")
+    stem = stem or "chmura"
+    if re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]", stem.split(".")[0].rstrip(" "), re.IGNORECASE):
+        stem = "_" + stem
+    # Stay within common filesystem limits, including multibyte Unicode names.
+    stem = stem.encode("utf-8")[:255 - len(extension.encode("utf-8"))].decode("utf-8", errors="ignore").rstrip(" .")
+    return stem + extension
 
 
 def child_path(base: Path, *parts: str) -> Path:

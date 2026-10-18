@@ -65,7 +65,8 @@ class LaszipHeader(ctypes.Structure):
 
 
 def native_path(path: Path) -> bytes:
-	encoding = "mbcs" if os.name == "nt" else sys.getfilesystemencoding()
+	# The bundled LASzip DLL accepts UTF-8 paths on Windows.
+	encoding = "utf-8" if os.name == "nt" else sys.getfilesystemencoding()
 	return str(path).encode(encoding)
 
 

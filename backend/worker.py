@@ -64,10 +64,15 @@ class Worker:
                 cloud.status = "queued"
             session.commit()
 
+    def work_input_path(self, job: ProcessingJob, cloud: Cloud) -> Path:
+        # PotreeConverter on Windows needs an ASCII basename for generated inputs.
+        filename = cloud.source_file if job.kind == "import" else "result.laz"
+        return child_path(self.settings.runtime_dir, str(job.id), filename)
+
     def restore_input(self, job, cloud):
         work = child_path(self.settings.runtime_dir, str(job.id))
         output = child_path(self.settings.clouds_dir, cloud.storage_key)
-        source = child_path(work, cloud.source_file)
+        source = self.work_input_path(job, cloud)
         preserved = child_path(output, cloud.source_file)
         if not source.exists() and preserved.is_file():
             work.mkdir(parents=True, exist_ok=True)
@@ -169,7 +174,7 @@ class Worker:
             source = session.get(Cloud, job.source_cloud_id) if job.source_cloud_id else None
         work = child_path(self.settings.runtime_dir, str(job.id))
         output = child_path(self.settings.clouds_dir, cloud.storage_key)
-        input_path = child_path(work, cloud.source_file)
+        input_path = self.work_input_path(job, cloud)
         work.mkdir(parents=True, exist_ok=True)
         params = job.parameters
         result = None
@@ -210,6 +215,8 @@ class Worker:
                 log_path.rename(output / log_path.name)
             size = input_path.stat().st_size
             input_path.rename(child_path(output, cloud.source_file))
+            if result is not None:
+                result["outputFile"] = cloud.source_file
             operation = {"type": job.kind, **params, "result": result}
             # Fetch metadata again: renaming / visibility changes may have occurred while processing.
             with self.database.session() as session:

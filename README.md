@@ -62,9 +62,17 @@ This does not provide an undo or trash feature. Interrupted deletion is finished
 on the next application startup; failed file cleanup can be retried.
 
 Use **Pobierz** on a ready cloud to save its preserved LAS/LAZ file to your
-computer. Downloads keep the original file name and require the owner's login,
-including for public clouds. For processing results, this downloads the result's
-LAS/LAZ file. The action is disabled while processing or when no source file is
+computer. Downloads use the cloud's current library name with the file's actual
+`.las` or `.laz` extension, including after renaming the cloud. Characters that
+cannot be used in file names are replaced with underscores. The metadata field
+`downloadName` matches the name sent in the download response. Cloud directories
+keep their stable identifiers, so duplicate names do not
+overwrite other clouds. New processing results also use the assigned name for
+their LAS/LAZ file on disk; renaming a cloud later changes the download name
+without moving its stored files. Existing results with generated file names
+also download under the current library name. Downloads require the owner's
+login, including for public clouds. For processing results, this downloads the result's LAS/LAZ
+file. The action is disabled while processing or when no source file is
 available. Files stream directly from the server with HTTP Range support for
 resuming downloads; the browser does not buffer the entire file in JavaScript.
 

@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from .config import Settings
 from .models import Cloud, ProcessingJob, User, iso_utc, utcnow
-from .storage import child_path, find_source, read_info, remove_directory, validate_potree
+from .storage import child_path, download_filename, find_source, read_info, remove_directory, validate_potree
 
 
 ACTIVE_STATUSES = ("uploading", "queued", "processing", "converting", "segmenting", "transforming", "removing")
@@ -45,6 +45,7 @@ def cloud_json(cloud: Cloud, user: User | None, settings: Settings) -> dict:
         "viewerUrl": f"/viewer?cloud={cloud.id}",
         "format": "Potree 1.x" if cloud.entry_file == "cloud.js" else "Potree 2.x",
         "sourceAvailable": source_available and own, "sourceFile": cloud.source_file if own else None,
+        "downloadName": download_filename(cloud.name, cloud.source_file) if own and cloud.source_file else None,
         "parentCloud": str(cloud.parent_id) if cloud.parent_id else None,
         "operation": cloud.operation if own else None,
         "sizeBytes": cloud.size_bytes, "createdAt": iso_utc(cloud.created_at),

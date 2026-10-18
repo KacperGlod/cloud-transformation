@@ -139,7 +139,7 @@ def test_owner_isolation_visibility_and_range_requests(application):
 
 
 @pytest.mark.parametrize("extension", ["las", "laz"])
-def test_source_download_preserves_bytes_filename_and_supports_head_and_range(application, extension):
+def test_source_download_uses_cloud_name_and_preserves_bytes_head_and_range(application, extension):
     app, client, settings = application
     owner, _ = register(client)
     identifier, directory = seed_cloud(app, settings, owner)
@@ -148,15 +148,18 @@ def test_source_download_preserves_bytes_filename_and_supports_head_and_range(ap
     with app.state.database.session() as session:
         cloud = session.get(Cloud, uuid.UUID(identifier))
         cloud.source_file = filename
-        cloud.name = "Zmieniona nazwa w bibliotece"
+        cloud.name = "Zmieniona nazwa łąki"
         session.commit()
+    expected_name = f"Zmieniona nazwa łąki.{extension}"
+    metadata = client.get(f"/api/clouds/{identifier}").json()
+    assert metadata["downloadName"] == expected_name and metadata["sourceFile"] == filename
     url = f"/api/clouds/{identifier}/download"
     response = client.get(url)
     content = (directory / filename).read_bytes()
     assert response.status_code == 200
     assert response.content == content
     assert response.headers["content-type"] == "application/octet-stream"
-    assert response.headers["content-disposition"] == f"attachment; filename*=utf-8''{quote(filename)}"
+    assert response.headers["content-disposition"] == f"attachment; filename*=utf-8''{quote(expected_name)}"
     assert response.headers["cache-control"] == "private, no-store"
     head = client.head(url)
     assert head.status_code == 200 and head.content == b""
@@ -166,6 +169,40 @@ def test_source_download_preserves_bytes_filename_and_supports_head_and_range(ap
     assert partial.status_code == 206 and partial.content == content[2:26]
     assert partial.headers["content-range"] == f"bytes 2-25/{len(content)}"
     assert client.get(url, headers={"Range": f"bytes={len(content)}-"}).status_code == 416
+    assert (directory / filename).read_bytes() == content
+    assert not (directory / expected_name).exists()
+
+
+@pytest.mark.parametrize(("name", "expected_name"), [
+    ("Wynik 01", "Wynik 01.las"),
+    ("Łąka po obróbce", "Łąka po obróbce.las"),
+    ("Wynik.LAS", "Wynik.las"),
+    ("Wynik.laz", "Wynik.las"),
+    ('Dach / sekcja: A\\B <test>|?*"', "Dach _ sekcja_ A_B _test_____.las"),
+    ("Skan\r\nWynik", "Skan__Wynik.las"),
+    ("...", "chmura.las"),
+    ("CON", "_CON.las"),
+    ("aux.sekcja", "_aux.sekcja.las"),
+    ("LPT1.las", "_LPT1.las"),
+    ("COM¹.las", "_COM¹.las"),
+    ("CON .wynik", "_CON .wynik.las"),
+    ("Wynik. .", "Wynik.las"),
+    ("界" * 120, "界" * 83 + ".las"),
+])
+def test_download_names_are_safe_and_match_metadata(application, name, expected_name):
+    app, client, settings = application
+    owner, _ = register(client)
+    identifier, directory = seed_cloud(app, settings, owner)
+    response = client.patch(f"/api/clouds/{identifier}", json={"name": name})
+    assert response.status_code == 200
+    assert response.json()["downloadName"] == expected_name
+    response = client.get(f"/api/clouds/{identifier}/download")
+    assert response.status_code == 200
+    expected_disposition = (f"attachment; filename*=utf-8''{quote(expected_name)}" if quote(expected_name) != expected_name
+                            else f'attachment; filename="{expected_name}"')
+    assert response.headers["content-disposition"] == expected_disposition
+    assert len(expected_name.encode("utf-8")) <= 255
+    assert response.content == (directory / "original.las").read_bytes()
 
 
 @pytest.mark.parametrize("visibility", ["private", "public"])
@@ -175,6 +212,8 @@ def test_source_download_requires_owner_even_for_public_clouds(application, visi
     identifier, _ = seed_cloud(app, settings, owner, visibility=visibility)
     url = f"/api/clouds/{identifier}/download"
     register(client, "other@example.com")
+    if visibility == "public":
+        assert client.get(f"/api/clouds/{identifier}").json()["downloadName"] is None
     assert client.get(url).status_code == 404
     assert client.head(url).status_code == 404
     client.cookies.clear()
@@ -190,11 +229,25 @@ def test_source_download_of_processing_result_returns_its_own_file(application):
     parent_id, parent_directory = seed_cloud(app, settings, owner)
     result_id, result_directory = seed_cloud(app, settings, owner, parent=uuid.UUID(parent_id))
     result_content = las_bytes(3)
-    (result_directory / "original.las").write_bytes(result_content)
+    internal_filename = f"{uuid.uuid4()}.laz"
+    (result_directory / "original.las").rename(result_directory / internal_filename)
+    (result_directory / internal_filename).write_bytes(result_content)
+    with app.state.database.session() as session:
+        cloud = session.get(Cloud, uuid.UUID(result_id))
+        cloud.source_file = internal_filename
+        cloud.name = "Wycięty dach"
+        session.commit()
     response = client.get(f"/api/clouds/{result_id}/download")
     assert response.status_code == 200 and response.content == result_content
+    assert response.headers["content-disposition"] == f"attachment; filename*=utf-8''{quote('Wycięty dach.laz')}"
     assert response.content != (parent_directory / "original.las").read_bytes()
     assert client.get(f"/api/clouds/{parent_id}/download").content == (parent_directory / "original.las").read_bytes()
+    renamed = client.patch(f"/api/clouds/{result_id}", json={"name": "Nowy dach"})
+    assert renamed.json()["downloadName"] == "Nowy dach.laz"
+    response = client.get(f"/api/clouds/{result_id}/download")
+    assert response.headers["content-disposition"] == f"attachment; filename*=utf-8''{quote('Nowy dach.laz')}"
+    assert response.content == result_content
+    assert (result_directory / internal_filename).read_bytes() == result_content
 
 
 def test_source_download_rejects_missing_files_unready_clouds_and_path_traversal(application):
@@ -564,10 +617,23 @@ def test_real_converter_and_processing_round_trip(application):
         ("point-removals", {"selections": [{"position": [0,0,0], "radius": .5}]}),
     ]
     for operation, parameters in operations:
-        response = client.post(f"/api/{operation}", json={"name": operation, "sourceCloud": identifier, **parameters})
+        name = f"Łąka — {operation}"
+        response = client.post(f"/api/{operation}", json={"name": name, "sourceCloud": identifier, **parameters})
         assert response.status_code == 202, response.text
+        assert response.json()["filename"] == name + ".laz"
         worker.process(worker.claim_next())
         result = client.get(f"/api/jobs/{response.json()['id']}").json()
         assert result["status"] == "completed", result
         derived = client.get(f"/api/clouds/{result['cloudId']}").json()
         assert derived["parentCloud"] == identifier and derived["sourceAvailable"]
+        assert derived["sourceFile"] == name + ".laz" and derived["downloadName"] == name + ".laz"
+        downloaded = client.get(f"/api/clouds/{result['cloudId']}/download")
+        assert downloaded.status_code == 200
+        assert downloaded.headers["content-disposition"] == f"attachment; filename*=utf-8''{quote(name + '.laz')}"
+        assert downloaded.content == (settings.clouds_dir / derived["slug"] / derived["sourceFile"]).read_bytes()
+    response = client.post("/api/transformations", json={"name": "Kolejna obróbka łąki", "sourceCloud": derived["id"],
+        "translation": [1, 0, 0], "rotationDegrees": [0, 0, 0], "scale": [1, 1, 1]})
+    assert response.status_code == 202, response.text
+    worker.process(worker.claim_next())
+    chained = client.get(f"/api/jobs/{response.json()['id']}").json()
+    assert chained["status"] == "completed", chained

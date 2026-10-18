@@ -20,7 +20,7 @@ from .database import Database
 from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
 from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, Credentials, JobList, JobRead, PointRemoval, Segmentation, Transformation, Visibility
 from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, import_legacy, job_json
-from .storage import child_path, remove_directory
+from .storage import child_path, download_filename, remove_directory
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -311,7 +311,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not settings.converter.is_file() or not settings.laszip.is_file():
             raise HTTPException(503, "Lokalny silnik przetwarzania jest niedostępny.")
         parameters = body.model_dump(mode="json", exclude={"name", "sourceCloud", "visibility"})
-        cloud, job = create_job(session, user, body.name, body.visibility.value, f"{uuid.uuid4()}.laz",
+        cloud, job = create_job(session, user, body.name, body.visibility.value, download_filename(body.name, "result.laz"),
                                 kind=kind, source=source, parameters=parameters)
         return job_json(job, cloud)
 
@@ -360,7 +360,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Nie znaleziono pliku.")
         # Starlette FileResponse handles HEAD and HTTP Range (206 / 416).
         return FileResponse(target, headers={"Cache-Control": "private, no-store"},
-                            filename=target.name if download else None,
+                            filename=download_filename(cloud.name, target.name) if download else None,
                             media_type="application/octet-stream" if download else None)
 
     @app.api_route("/api/clouds/{identifier}/download", methods=["GET", "HEAD"])

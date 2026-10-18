@@ -89,8 +89,8 @@ function render() {
     download.setAttribute("aria-label", `Pobierz plik LAS/LAZ chmury ${cloud.name}`);
     if (canDownload) {
       download.href = `/api/clouds/${cloud.id}/download`;
-      download.download = cloud.sourceFile;
-      download.title = `Pobierz ${cloud.sourceFile}`;
+      download.download = cloud.downloadName;
+      download.title = `Pobierz ${cloud.downloadName}`;
     } else {
       download.type = "button";
       download.disabled = true;
