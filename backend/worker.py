@@ -15,6 +15,7 @@ from sqlalchemy import select, update
 from .config import Settings
 from .database import Database
 from .models import Cloud, ProcessingJob, iso_utc, utcnow
+from .ply import ply_pipeline
 from .storage import child_path, ensure_conversion_space, remove_directory, validate_potree
 
 
@@ -72,11 +73,14 @@ class Worker:
     def restore_input(self, job, cloud):
         work = child_path(self.settings.runtime_dir, str(job.id))
         output = child_path(self.settings.clouds_dir, cloud.storage_key)
-        source = self.work_input_path(job, cloud)
-        preserved = child_path(output, cloud.source_file)
-        if not source.exists() and preserved.is_file():
-            work.mkdir(parents=True, exist_ok=True)
-            preserved.rename(source)
+        files = {cloud.source_file: self.work_input_path(job, cloud)}
+        if cloud.processing_file:
+            files[cloud.processing_file] = child_path(work, cloud.processing_file)
+        for filename, target in files.items():
+            preserved = child_path(output, filename)
+            if not target.exists() and preserved.is_file():
+                work.mkdir(parents=True, exist_ok=True)
+                preserved.rename(target)
         remove_directory(self.settings.clouds_dir, cloud.storage_key)
 
     def claim_next(self):
@@ -100,6 +104,7 @@ class Worker:
         self.update_job(job_id, status=status, progress=0)
         output_queue = queue.Queue()
         environment = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+        environment["PATH"] = str(Path(command[0]).resolve().parent) + os.pathsep + environment.get("PATH", "")
         creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         complete_output = ""
         with self.database.session() as session:
@@ -181,9 +186,9 @@ class Worker:
         interrupted = False
         try:
             if source:
-                if not source.source_file or source.status != "ready":
+                if not source.processing_filename or source.status != "ready":
                     raise ValueError("Chmura źródłowa nie jest gotowa do przetwarzania.")
-                source_path = child_path(self.settings.clouds_dir, source.storage_key, source.source_file)
+                source_path = child_path(self.settings.clouds_dir, source.storage_key, source.processing_filename)
                 command = [sys.executable, "-u", str(self.settings.root / "tools" / {
                     "segmentation": "segment_pointcloud.py", "transformation": "transform_pointcloud.py",
                     "point-removal": "remove_points.py"}[job.kind]),
@@ -206,6 +211,15 @@ class Worker:
                 if not summaries:
                     raise ValueError("Proces nie zwrócił podsumowania operacji.")
                 result = json.loads(summaries[-1])
+            original_path = input_path
+            if job.kind == "import" and input_path.suffix.lower() == ".ply":
+                if not self.settings.pdal.is_file():
+                    raise ValueError("Import PLY wymaga PDAL. Skonfiguruj PDAL_PATH.")
+                input_path = child_path(work, cloud.processing_file)
+                pipeline_file = work / "ply-pipeline.json"
+                pipeline_file.write_text(json.dumps(ply_pipeline(original_path, input_path, self.settings.clouds_dir)), encoding="utf-8")
+                self.run_command(job_id, [self.settings.pdal, "pipeline", pipeline_file, "--stream"],
+                                 work / "ply-import.log", "converting")
             ensure_conversion_space(input_path, self.settings.clouds_dir)
             output.mkdir(exist_ok=False)
             self.run_command(job_id, [self.settings.converter, input_path, "-o", output, "-m", "poisson"],
@@ -213,8 +227,10 @@ class Worker:
             validate_potree(output)
             for log_path in work.glob("*.log"):
                 log_path.rename(output / log_path.name)
-            size = input_path.stat().st_size
-            input_path.rename(child_path(output, cloud.source_file))
+            size = original_path.stat().st_size
+            original_path.rename(child_path(output, cloud.source_file))
+            if input_path != original_path:
+                input_path.rename(child_path(output, cloud.processing_file))
             if result is not None:
                 result["outputFile"] = cloud.source_file
             operation = {"type": job.kind, **params, "result": result}
@@ -223,6 +239,7 @@ class Worker:
                 current = session.get(Cloud, cloud.id)
                 info = {"schemaVersion": 2, "id": str(current.id), "name": current.name,
                     "visibility": current.visibility, "slug": current.storage_key, "sourceFile": current.source_file,
+                    "processingFile": current.processing_file,
                     "pointCloudFile": "metadata.json", "createdAt": iso_utc(current.created_at),
                     "parentCloud": str(current.parent_id) if current.parent_id else None, "operation": operation}
                 (output / "cloud-info.json").write_text(json.dumps(info, indent=2, ensure_ascii=False), encoding="utf-8")

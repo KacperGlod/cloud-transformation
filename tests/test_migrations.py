@@ -46,6 +46,7 @@ def test_soft_delete_migration_preserves_existing_clouds_and_jobs(tmp_path):
             job = session.get(ProcessingJob, job_id)
             assert session.get(User, owner_id).email == "migration@example.test"
             assert parent.deleted_at is None and child.deleted_at is None
+            assert parent.processing_file is None and child.processing_filename == "original.las"
             assert parent.status == "ready" and child.parent_id == parent_id
             assert child.source_file == "original.las" and child.size_bytes == 1234
             assert job.source_cloud_id == parent_id and job.parameters == {"translation": [1, 2, 3]}
@@ -60,5 +61,45 @@ def test_soft_delete_migration_preserves_existing_clouds_and_jobs(tmp_path):
         with database.session() as session:
             assert session.get(Cloud, child_id).parent_id == parent_id
             assert session.get(ProcessingJob, job_id).result == {"pointCount": 10}
+    finally:
+        database.engine.dispose()
+
+
+def test_processing_file_migration_preserves_originals_and_existing_schema(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", clouds_dir=tmp_path / "clouds",
+                        runtime_dir=tmp_path / "runtime", database_url="", start_worker=False)
+    settings.prepare()
+    database = Database(settings)
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "backend" / "migrations"))
+    try:
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "0002")
+        database.migrate()
+        with database.session() as session:
+            user = User(email="ply-migration@example.test", password_hash="unused")
+            session.add(user)
+            session.flush()
+            cloud = Cloud(owner_id=user.id, name="PLY", status="ready", storage_key="ply-migration",
+                          source_file="original.ply", processing_file="working.laz")
+            session.add(cloud)
+            session.commit()
+            identifier = cloud.id
+        database.migrate()
+        with database.session() as session:
+            cloud = session.get(Cloud, identifier)
+            assert cloud.source_file == "original.ply" and cloud.processing_filename == "working.laz"
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.check(config)
+            command.downgrade(config, "0002")
+            assert "processing_file" not in {column["name"] for column in inspect(connection).get_columns("clouds")}
+            clouds = Table("clouds", MetaData(), autoload_with=connection)
+            assert connection.scalar(select(clouds.c.source_file)) == "original.ply"
+        database.migrate()
+        with database.session() as session:
+            cloud = session.get(Cloud, identifier)
+            assert cloud.source_file == "original.ply" and cloud.processing_file is None
     finally:
         database.engine.dispose()

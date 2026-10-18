@@ -18,6 +18,7 @@ from .auth import COOKIE_NAME, current_user, hash_password, start_session, token
 from .config import Settings
 from .database import Database
 from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
+from .ply import MAX_HEADER_BYTES, read_ply_header
 from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, Credentials, JobList, JobRead, PointRemoval, Segmentation, Transformation, Visibility
 from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, import_legacy, job_json
 from .storage import child_path, download_filename, remove_directory
@@ -36,7 +37,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 owner = session.scalar(select(User).order_by(User.created_at, User.id).limit(1))
                 if owner:
                     import_legacy(session, settings, owner)
-                # A disconnected upload cannot be resumed as a valid complete LAS/LAZ.
+                # A disconnected upload cannot be resumed as a complete source file.
                 for job in session.scalars(select(ProcessingJob).where(ProcessingJob.status == "uploading")):
                     cloud = session.get(Cloud, job.cloud_id)
                     if cloud.deleted_at is not None or cloud.status in ("deleting", "deleted"):
@@ -173,6 +174,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         user = current_user(request, session, required=False)
         return {"ok": True, "backend": "python", "database": database.engine.dialect.name,
             "converterAvailable": settings.converter.is_file(),
+            "plyImportAvailable": settings.converter.is_file() and settings.pdal.is_file(),
             "segmentationAvailable": settings.laszip.is_file() and (settings.root / "tools/segment_pointcloud.py").is_file(),
             "transformationAvailable": settings.laszip.is_file() and (settings.root / "tools/transform_pointcloud.py").is_file(),
             "pointRemovalAvailable": settings.laszip.is_file() and (settings.root / "tools/remove_points.py").is_file(),
@@ -236,16 +238,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def upload_name(filename):
         if (not filename or len(filename) > 240 or any(char in filename for char in ('/', '\\', ':', '\0'))
-                or Path(filename).suffix.lower() not in (".las", ".laz")):
-            raise HTTPException(400, "Dozwolone są pliki LAS i LAZ z prawidłową nazwą.")
+                or Path(filename).suffix.lower() not in (".las", ".laz", ".ply")):
+            raise HTTPException(400, "Dozwolone są pliki LAS, LAZ i PLY z prawidłową nazwą.")
         return filename
 
     async def receive_upload(request, session, user, name, visibility, filename, chunks, declared_length=0):
+        filename = upload_name(filename)
+        is_ply = Path(filename).suffix.lower() == ".ply"
         if not settings.converter.is_file():
             raise HTTPException(503, "Nie znaleziono PotreeConvertera.")
+        if is_ply and not settings.pdal.is_file():
+            raise HTTPException(503, "Import PLY wymaga PDAL. Zainstaluj PDAL na serwerze i skonfiguruj PDAL_PATH.")
         if declared_length > settings.max_upload_bytes:
             raise HTTPException(413, "Plik przekracza dopuszczalny rozmiar uploadu.")
-        cloud, job = create_job(session, user, name, visibility, upload_name(filename))
+        cloud, job = create_job(session, user, name, visibility, filename)
         work = child_path(settings.runtime_dir, str(job.id))
         work.mkdir()
         input_path = child_path(work, filename)
@@ -260,8 +266,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not received:
                 raise HTTPException(400, "Przesłany plik jest pusty.")
             async with await anyio.open_file(input_path, "rb") as stream:
-                header = await stream.read(227)
-            if len(header) < 227 or header[:4] != b"LASF":
+                header = await stream.read(MAX_HEADER_BYTES if is_ply else 227)
+            if is_ply:
+                try:
+                    read_ply_header(header)
+                except ValueError as error:
+                    raise HTTPException(400, str(error)) from error
+            elif len(header) < 227 or header[:4] != b"LASF":
                 raise HTTPException(400, "Plik nie ma prawidłowego nagłówka LAS/LAZ.")
             cloud.status, cloud.size_bytes = "queued", received
             job.status, job.upload_progress = "queued", 100
@@ -304,10 +315,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def create_operation_job(body, kind, request, session):
         user = current_user(request, session)
         source = get_cloud(session, body.sourceCloud, user, write=True)
-        if source.status != "ready" or not source.source_file:
-            raise HTTPException(409, "Chmura źródłowa nie jest gotowa lub nie ma oryginalnego LAS/LAZ.")
-        if not child_path(settings.clouds_dir, source.storage_key, source.source_file).is_file():
-            raise HTTPException(409, "Nie znaleziono oryginalnego pliku LAS/LAZ.")
+        if source.status != "ready" or not source.processing_filename:
+            raise HTTPException(409, "Chmura źródłowa nie jest gotowa lub nie ma danych do przetwarzania.")
+        if not child_path(settings.clouds_dir, source.storage_key, source.processing_filename).is_file():
+            raise HTTPException(409, "Nie znaleziono pliku do przetwarzania chmury.")
         if not settings.converter.is_file() or not settings.laszip.is_file():
             raise HTTPException(503, "Lokalny silnik przetwarzania jest niedostępny.")
         parameters = body.model_dump(mode="json", exclude={"name", "sourceCloud", "visibility"})
@@ -354,7 +365,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError:
             raise HTTPException(404, "Nie znaleziono pliku.")
         owns = user is not None and user.id == cloud.owner_id
-        if not owns and (asset_path == cloud.source_file or target.suffix == ".log" or target.name == "cloud-info.json"):
+        if not owns and (any(filename and target == child_path(directory, filename)
+                             for filename in (cloud.source_file, cloud.processing_filename))
+                         or target.suffix == ".log" or target.name == "cloud-info.json"):
             raise HTTPException(404, "Nie znaleziono pliku.")
         if not target.is_file():
             raise HTTPException(404, "Nie znaleziono pliku.")
@@ -368,7 +381,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         user = current_user(request, session)
         cloud = get_cloud(session, identifier, user, write=True)
         if not cloud.source_file:
-            raise HTTPException(404, "Brak pliku źródłowego LAS/LAZ do pobrania.")
+            raise HTTPException(404, "Brak pliku źródłowego do pobrania.")
         return serve_cloud_file(cloud, cloud.source_file, user, download=True)
 
     @app.api_route("/api/clouds/{identifier}/files/{asset_path:path}", methods=["GET", "HEAD"])

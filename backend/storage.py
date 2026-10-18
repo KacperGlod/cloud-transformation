@@ -10,7 +10,7 @@ def download_filename(name: str, source_filename: str) -> str:
     """Build a portable download name without changing the stored file's format."""
     extension = Path(source_filename).suffix.lower()
     stem = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', "_", name).strip(" .")
-    if stem.lower().endswith((".las", ".laz")):
+    if stem.lower().endswith((".las", ".laz", ".ply")):
         stem = stem[:-4].rstrip(" .")
     stem = stem or "chmura"
     if re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]", stem.split(".")[0].rstrip(" "), re.IGNORECASE):
@@ -46,7 +46,7 @@ def find_source(directory: Path, info: dict) -> str | None:
     declared = info.get("sourceFile")
     if isinstance(declared, str) and Path(declared).name == declared:
         candidate = child_path(directory, declared)
-        if candidate.is_file() and candidate.suffix.lower() in (".las", ".laz"):
+        if candidate.is_file() and candidate.suffix.lower() in (".las", ".laz", ".ply"):
             return candidate.name
     for candidate in directory.iterdir():
         if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() in (".las", ".laz"):

@@ -54,6 +54,7 @@ class CloudRead(BaseModel):
     viewerUrl: str
     format: str
     sourceAvailable: bool
+    processingAvailable: bool
     sourceFile: str | None
     downloadName: str | None
     parentCloud: str | None

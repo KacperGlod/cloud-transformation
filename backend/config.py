@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 import os
+import shutil
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +31,12 @@ class Settings:
     @property
     def laszip(self) -> Path:
         return Path(os.getenv("LASZIP_LIBRARY", str(self.root / "tools" / "PotreeConverter" / "laszip.dll")))
+
+    @property
+    def pdal(self) -> Path:
+        executable = Path("Library/bin/pdal.exe" if os.name == "nt" else "bin/pdal")
+        local = self.root / ".runtime" / "pdal" / executable
+        return Path(os.getenv("PDAL_PATH") or (str(local) if local.is_file() else shutil.which("pdal") or str(local)))
 
     def prepare(self):
         for directory in (self.data_dir, self.clouds_dir, self.runtime_dir):

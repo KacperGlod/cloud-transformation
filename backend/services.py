@@ -38,6 +38,8 @@ def finish_cloud_deletion(session, cloud: Cloud, settings: Settings) -> None:
 def cloud_json(cloud: Cloud, user: User | None, settings: Settings) -> dict:
     own = user is not None and cloud.owner_id == user.id
     source_available = bool(cloud.source_file and child_path(settings.clouds_dir, cloud.storage_key, cloud.source_file).is_file())
+    processing_available = bool(cloud.processing_filename and
+        child_path(settings.clouds_dir, cloud.storage_key, cloud.processing_filename).is_file())
     url = f"/api/clouds/{cloud.id}/files/{cloud.entry_file}" if cloud.entry_file and cloud.status == "ready" else None
     return {
         "id": str(cloud.id), "name": cloud.name, "slug": cloud.storage_key,
@@ -45,6 +47,7 @@ def cloud_json(cloud: Cloud, user: User | None, settings: Settings) -> dict:
         "viewerUrl": f"/viewer?cloud={cloud.id}",
         "format": "Potree 1.x" if cloud.entry_file == "cloud.js" else "Potree 2.x",
         "sourceAvailable": source_available and own, "sourceFile": cloud.source_file if own else None,
+        "processingAvailable": processing_available and own,
         "downloadName": download_filename(cloud.name, cloud.source_file) if own and cloud.source_file else None,
         "parentCloud": str(cloud.parent_id) if cloud.parent_id else None,
         "operation": cloud.operation if own else None,
@@ -77,6 +80,7 @@ def create_job(session, user: User, name: str, visibility: str, filename: str, *
     identifier = uuid.uuid4()
     cloud = Cloud(id=identifier, owner_id=user.id, name=name, visibility=visibility,
                   storage_key=str(identifier), source_file=filename,
+                  processing_file="working.laz" if Path(filename).suffix.lower() == ".ply" else None,
                   status="uploading" if kind == "import" else "queued",
                   parent_id=source.id if source else None)
     session.add(cloud)
@@ -114,6 +118,11 @@ def import_legacy(session, settings: Settings, owner: User) -> int:
             size_bytes=(directory / source).stat().st_size if source else 0,
             status="failed" if error else "ready", error=error,
             operation=info.get("operation") if isinstance(info.get("operation"), dict) else None)
+        processing = info.get("processingFile")
+        if (isinstance(processing, str) and Path(processing).name == processing
+                and Path(processing).suffix.lower() in (".las", ".laz")
+                and child_path(directory, processing).is_file()):
+            cloud.processing_file = processing
         session.add(cloud)
         imported[directory.name] = cloud
         parents[directory.name] = info.get("parentCloud")

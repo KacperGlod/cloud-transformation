@@ -4,7 +4,7 @@
 	<base href="/">
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-	<meta name="description" content="Viewer i konwerter chmur punktów LAS/LAZ oparty na Potree">
+	<meta name="description" content="Viewer i konwerter chmur punktów LAS/LAZ/PLY oparty na Potree">
 	<title>Cloud Transformation</title>
 	<link rel="icon" type="image/svg+xml" sizes="any" href="/assets/favicon.svg">
 
@@ -594,8 +594,8 @@
 				<div class="operation-section-body-inner">
 
 					<div class="form-group">
-						<label for="cloud_file">Plik LAS lub LAZ</label>
-						<input id="cloud_file" name="cloudFile" type="file" accept=".las,.laz" required>
+						<label for="cloud_file">Plik LAS, LAZ lub PLY</label>
+						<input id="cloud_file" name="cloudFile" type="file" accept=".las,.laz,.ply" required>
 					</div>
 
 					<div class="form-group">
@@ -629,7 +629,7 @@
 			</button>
 			<div id="segment_section_body" class="operation-section-body" aria-hidden="true">
 				<div class="operation-section-body-inner">
-			<p id="segment_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
+			<p id="segment_source" class="source-summary">Najpierw wczytaj chmurę z danymi do przetwarzania.</p>
 
 			<div class="form-group">
 				<label for="clip_box_list">Clipping box</label>
@@ -678,7 +678,7 @@
 			</button>
 			<div id="point_removal_section_body" class="operation-section-body" aria-hidden="true">
 				<div class="operation-section-body-inner">
-			<p id="point_removal_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
+			<p id="point_removal_source" class="source-summary">Najpierw wczytaj chmurę z danymi do przetwarzania.</p>
 
 			<div class="form-group">
 				<label for="point_removal_radius">Promień sąsiedztwa</label>
@@ -727,7 +727,7 @@
 			</button>
 			<div id="transform_section_body" class="operation-section-body" aria-hidden="true">
 				<div class="operation-section-body-inner">
-			<p id="transform_source" class="source-summary">Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.</p>
+			<p id="transform_source" class="source-summary">Najpierw wczytaj chmurę z danymi do przetwarzania.</p>
 
 			<div class="form-group">
 				<label>Przesunięcie XYZ</label>
@@ -1047,7 +1047,7 @@
 		}
 
 		function updateSegmentationControls() {
-			const hasSource = Boolean(activeCloud?.sourceAvailable);
+			const hasSource = Boolean(activeCloud?.processingAvailable);
 			const hasBox = clippingBoxes.length > 0;
 			segmentButton.disabled = !segmentationEngineAvailable || !hasSource || !hasBox;
 
@@ -1055,9 +1055,9 @@
 				segmentSource.textContent = "Lokalny silnik segmentacji jest niedostępny.";
 				setSegmentStatus("Sprawdź plik tools/segment_pointcloud.py i bibliotekę LASzip.", "error");
 			} else if (!activeCloud) {
-				segmentSource.textContent = "Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.";
+				segmentSource.textContent = "Najpierw wczytaj chmurę z danymi do przetwarzania.";
 			} else if (!hasSource) {
-				segmentSource.textContent = `Chmura „${activeCloud.name}” nie ma oryginalnego pliku LAS/LAZ.`;
+				segmentSource.textContent = `Chmura „${activeCloud.name}” nie ma danych do przetwarzania.`;
 				setSegmentStatus("Segmentacja tej chmury wymaga uzupełnienia pliku źródłowego.", "error");
 			} else {
 				segmentSource.textContent = `Źródło: ${activeCloud.name} (${activeCloud.sourceFile})`;
@@ -1072,16 +1072,16 @@
 		}
 
 		function updateTransformationControls() {
-			const hasSource = Boolean(activeCloud?.sourceAvailable);
+			const hasSource = Boolean(activeCloud?.processingAvailable);
 			transformButton.disabled = !transformationEngineAvailable || !hasSource;
 
 			if (!transformationEngineAvailable) {
 				transformSource.textContent = "Lokalny silnik transformacji jest niedostępny.";
 				setTransformStatus("Sprawdź plik tools/transform_pointcloud.py i bibliotekę LASzip.", "error");
 			} else if (!activeCloud) {
-				transformSource.textContent = "Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.";
+				transformSource.textContent = "Najpierw wczytaj chmurę z danymi do przetwarzania.";
 			} else if (!hasSource) {
-				transformSource.textContent = `Chmura „${activeCloud.name}” nie ma oryginalnego pliku LAS/LAZ.`;
+				transformSource.textContent = `Chmura „${activeCloud.name}” nie ma danych do przetwarzania.`;
 				setTransformStatus("Transformacja tej chmury wymaga uzupełnienia pliku źródłowego.", "error");
 			} else {
 				transformSource.textContent = `Źródło: ${activeCloud.name} (${activeCloud.sourceFile})`;
@@ -1094,7 +1094,7 @@
 		}
 
 		function updatePointRemovalControls() {
-			const hasSource = Boolean(activeCloud?.sourceAvailable);
+			const hasSource = Boolean(activeCloud?.processingAvailable);
 			const hasSelections = pointRemovalSelections.length > 0;
 			pointRemovalPick.disabled = !pointRemovalEngineAvailable || !hasSource;
 			pointRemovalUndo.disabled = !hasSelections;
@@ -1108,9 +1108,9 @@
 				pointRemovalSource.textContent = "Lokalny silnik usuwania punktów jest niedostępny.";
 				setPointRemovalStatus("Sprawdź plik tools/remove_points.py i bibliotekę LASzip.", "error");
 			} else if (!activeCloud) {
-				pointRemovalSource.textContent = "Najpierw wczytaj chmurę z zachowanym plikiem LAS/LAZ.";
+				pointRemovalSource.textContent = "Najpierw wczytaj chmurę z danymi do przetwarzania.";
 			} else if (!hasSource) {
-				pointRemovalSource.textContent = `Chmura „${activeCloud.name}” nie ma oryginalnego pliku LAS/LAZ.`;
+				pointRemovalSource.textContent = `Chmura „${activeCloud.name}” nie ma danych do przetwarzania.`;
 				setPointRemovalStatus("Usuwanie punktów wymaga zachowanego pliku źródłowego.", "error");
 			} else {
 				pointRemovalSource.textContent = `Źródło: ${activeCloud.name} (${activeCloud.sourceFile})`;
@@ -1210,8 +1210,8 @@
 		}
 
 		function addPointRemovalSelection(mouse) {
-			if (!activePointCloud || !activeCloud?.sourceAvailable) {
-				throw new Error("Aktywna chmura nie ma zachowanego pliku LAS/LAZ.");
+			if (!activePointCloud || !activeCloud?.processingAvailable) {
+				throw new Error("Aktywna chmura nie ma danych do przetwarzania.");
 			}
 			if (pointRemovalSelections.length >= 500) {
 				throw new Error("Jedna operacja może zawierać najwyżej 500 zaznaczeń.");
@@ -1253,7 +1253,7 @@
 				clearPointRemovalSelections();
 			}
 			const cloudDescriptor = availableClouds.find(cloud => normalizeCloudUrl(cloud.url) === normalizedUrl)
-				|| { name, slug: name, url: normalizedUrl, sourceAvailable: false, sourceFile: null };
+				|| { name, slug: name, url: normalizedUrl, sourceAvailable: false, processingAvailable: false, sourceFile: null };
 			if (cloudDescriptor.id) {
 				requestedCloudId = cloudDescriptor.id;
 				window.history.replaceState(null, "", `/viewer?cloud=${encodeURIComponent(cloudDescriptor.id)}`);
@@ -1408,7 +1408,7 @@
 						setImportStatus(`Konwersja Potree: ${Math.round(job.progress)}%`);
 					} else {
 						importProgress.removeAttribute("value");
-						setImportStatus("PotreeConverter przetwarza chmurę…");
+						setImportStatus("Trwa przygotowywanie chmury…");
 					}
 				} else if (job.status === "completed") {
 					importProgress.value = 100;
@@ -1430,8 +1430,8 @@
 			if (!activePointCloud || !activeCloud || !clipBox) {
 				throw new Error("Wczytaj chmurę i wybierz clipping box.");
 			}
-			if (!activeCloud.sourceAvailable) {
-				throw new Error("Aktywna chmura nie ma zachowanego pliku LAS/LAZ.");
+			if (!activeCloud.processingAvailable) {
+				throw new Error("Aktywna chmura nie ma danych do przetwarzania.");
 			}
 			if ([clipBox.scale.x, clipBox.scale.y, clipBox.scale.z].some(value => Math.abs(value) < 1e-9)) {
 				throw new Error("Clipping box nie może mieć zerowego rozmiaru.");
@@ -1532,8 +1532,8 @@
 			if (!activeCloud) {
 				throw new Error("Wczytaj chmurę źródłową.");
 			}
-			if (!activeCloud.sourceAvailable) {
-				throw new Error("Aktywna chmura nie ma zachowanego pliku LAS/LAZ.");
+			if (!activeCloud.processingAvailable) {
+				throw new Error("Aktywna chmura nie ma danych do przetwarzania.");
 			}
 
 			const translation = inputVector(["translate_x", "translate_y", "translate_z"], "Przesunięcie");
@@ -1608,8 +1608,8 @@
 		}
 
 		function buildPointRemovalPayload(name) {
-			if (!activeCloud?.sourceAvailable) {
-				throw new Error("Aktywna chmura nie ma zachowanego pliku LAS/LAZ.");
+			if (!activeCloud?.processingAvailable) {
+				throw new Error("Aktywna chmura nie ma danych do przetwarzania.");
 			}
 			if (pointRemovalSelections.length === 0) {
 				throw new Error("Wybierz co najmniej jeden punkt do usunięcia.");
@@ -1698,8 +1698,8 @@
 		pointRemovalPick.addEventListener("click", () => {
 			try {
 				pointRemovalRadiusValue();
-				if (!activeCloud?.sourceAvailable) {
-					throw new Error("Wczytaj chmurę z zachowanym plikiem LAS/LAZ.");
+				if (!activeCloud?.processingAvailable) {
+					throw new Error("Wczytaj chmurę z danymi do przetwarzania.");
 				}
 				setPanelOpen(false);
 				setPointRemovalPicking(true);
@@ -1759,7 +1759,7 @@
 		cloudFile.addEventListener("change", () => {
 			const file = cloudFile.files[0];
 			if (file) {
-				cloudName.value = file.name.replace(/\.(las|laz)$/i, "");
+				cloudName.value = file.name.replace(/\.(las|laz|ply)$/i, "");
 			}
 		});
 
@@ -1926,7 +1926,7 @@
 			} finally {
 				controls.forEach(control => { control.disabled = false; });
 				updatePivotControls();
-				transformButton.disabled = !transformationEngineAvailable || !activeCloud?.sourceAvailable;
+				transformButton.disabled = !transformationEngineAvailable || !activeCloud?.processingAvailable;
 			}
 		});
 
@@ -1949,7 +1949,7 @@
 					|| clouds[0];
 				const selectedCloud = clouds.find(cloud => cloud.id === requestedCloudId) || initialCloud;
 				if (!selectedCloud) {
-					showViewerStatus("Brak gotowych chmur. Wróć do biblioteki i dodaj plik LAS lub LAZ.");
+					showViewerStatus("Brak gotowych chmur. Wróć do biblioteki i dodaj plik LAS, LAZ lub PLY.");
 					return;
 				}
 

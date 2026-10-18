@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from pathlib import Path
 import uuid
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, String, Text, Uuid
@@ -50,6 +51,7 @@ class Cloud(Base):
     status: Mapped[str] = mapped_column(String(24), default="uploading", nullable=False)
     storage_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     source_file: Mapped[str | None] = mapped_column(String(255))
+    processing_file: Mapped[str | None] = mapped_column(String(255))
     entry_file: Mapped[str | None] = mapped_column(String(40))
     size_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clouds.id", ondelete="SET NULL"))
@@ -58,6 +60,14 @@ class Cloud(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def processing_filename(self) -> str | None:
+        if self.processing_file:
+            return self.processing_file
+        if self.source_file and Path(self.source_file).suffix.lower() in (".las", ".laz"):
+            return self.source_file
+        return None
 
 
 class ProcessingJob(Base):

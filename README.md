@@ -49,11 +49,11 @@ unless their `cloud-info.json` explicitly declares `public`.
 ## Library, access, and database
 
 The library lists the signed-in user's uploads and processing results. It
-supports LAS/LAZ uploads, renaming, changing visibility, viewing job logs, and
+supports LAS/LAZ/PLY uploads, renaming, changing visibility, viewing job logs, and
 deleting a cloud's files while retaining its metadata. Cloud names need not be unique.
 New clouds have UUID identifiers and directories independent of their names.
 
-Deletion permanently removes the cloud's LAS/LAZ, Potree files, and temporary
+Deletion permanently removes the cloud's original file, working LAS/LAZ, Potree files, and temporary
 job directories from the server. Its database record remains with status
 `deleted` and a UTC `deleted_at` timestamp, along with job history and links
 from derived clouds. Deleted clouds are excluded from the library and cannot
@@ -61,9 +61,9 @@ be viewed, downloaded, edited, or processed, including through old public links.
 This does not provide an undo or trash feature. Interrupted deletion is finished
 on the next application startup; failed file cleanup can be retried.
 
-Use **Pobierz** on a ready cloud to save its preserved LAS/LAZ file to your
+Use **Pobierz** on a ready cloud to save its preserved LAS/LAZ/PLY file to your
 computer. Downloads use the cloud's current library name with the file's actual
-`.las` or `.laz` extension, including after renaming the cloud. Characters that
+`.las`, `.laz`, or `.ply` extension, including after renaming the cloud. Characters that
 cannot be used in file names are replaced with underscores. The metadata field
 `downloadName` matches the name sent in the download response. Cloud directories
 keep their stable identifiers, so duplicate names do not
@@ -87,7 +87,7 @@ first. Sorting is preserved while searching, filtering, and polling for updates.
   processing, job logs, and original-file downloads still require ownership.
 
 The database is `data/app.sqlite3` by default. It contains `User`, `Cloud`,
-`ProcessingJob`, and login-session records. LAS/LAZ and Potree binaries stay
+`ProcessingJob`, and login-session records. LAS/LAZ/PLY and Potree binaries stay
 outside the database. Only dedicated asset directories are served statically;
 database files, Python source, tools, and temporary uploads are not web assets.
 Converted data is served after authorization with HTTP Range support.
@@ -145,6 +145,7 @@ Configuration is read from environment variables:
 | `MAX_UPLOAD_BYTES` | 100 GiB per source file |
 | `POTREE_CONVERTER` | Bundled converter executable |
 | `LASZIP_LIBRARY` | Bundled `laszip.dll` |
+| `PDAL_PATH` | PDAL executable for PLY import; detects `.runtime/pdal/Library/bin/pdal.exe` on Windows, `.runtime/pdal/bin/pdal` elsewhere, then `pdal` on PATH |
 | `START_WORKER` | `1`; set `0` for an independently managed worker |
 | `SECURE_COOKIES` | `0` for localhost HTTP; use `1` with HTTPS |
 | `HOST` / `PORT` | `127.0.0.1` / `1234`; also available as CLI arguments |
@@ -169,7 +170,7 @@ session cookie for subsequent calls.
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
 | `PATCH /api/clouds/{id}` | Owner changes `name` and/or `visibility` |
 | `DELETE /api/clouds/{id}` | Owner permanently removes files and marks the retained cloud record deleted |
-| `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ as an attachment; supports HEAD and Range |
+| `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ/PLY as an attachment; supports HEAD and Range |
 | `GET /api/clouds/{id}/files/{path}` | Authorized files, including Range requests |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | Owner's persistent job states and logs |
 | `POST /api/segmentations` | Queue a clipping-box operation |
@@ -223,7 +224,7 @@ switch windows or tabs; click the airplane icon to resume. The instructions
 disappear when flight ends. Clicking inside the viewer during flight keeps the
 instructions visible; press **Esc** to stop flying and restore normal controls.
 
-## LAS/LAZ import
+## LAS/LAZ/PLY import
 
 PotreeConverter should be located at:
 
@@ -234,7 +235,7 @@ tools/PotreeConverter/PotreeConverter.exe
 After starting the project:
 
 1. Click **Dodaj chmurę** in the library (or open the viewer's import panel).
-2. Select a `.las` or `.laz` file.
+2. Select a `.las`, `.laz`, or `.ply` file.
 3. Enter a point cloud name and choose its visibility in the library.
 4. Click the button to upload and convert the file.
 
@@ -244,15 +245,63 @@ cloud from the library. Imports initiated inside the viewer load automatically.
 Conversions run one at a time to avoid overloading the computer.
 
 After a successful conversion, the point cloud directory also contains the
-original LAS/LAZ file under its original name and the complete PotreeConverter
+original LAS/LAZ/PLY file under its original name and the complete PotreeConverter
 output in `conversion.log`. The `cloud-info.json` file stores local information
 about the point cloud's origin. The SQL database is authoritative for current
 names, ownership, visibility, and processing status.
 
+### PLY and PDAL
+
+PLY imports use the PDAL command-line application, tested with PDAL 2.10.2.
+The Python PDAL bindings are not required. Install the native runtime once per
+machine, for example with [Conda](https://pdal.io/en/stable/download.html#conda)
+or micromamba, from the repository root:
+
+```powershell
+conda create --yes --prefix .runtime/pdal --override-channels --channel conda-forge libpdal-core=2.10.2
+```
+
+The same command works with `micromamba create` in place of `conda create`.
+The application detects this local installation without activating it. For an
+installation elsewhere, set `PDAL_PATH` to the full path of `pdal.exe` (or `pdal`).
+Keep its DLLs/libraries alongside the executable. PDAL, its environment, and
+package caches are local dependencies and must not be committed. A server
+deployment must provision PDAL as well as PotreeConverter and LASzip.
+`GET /api/health` exposes `plyImportAvailable`; missing PDAL rejects PLY imports
+with HTTP 503 before a job is created. LAS/LAZ do not require PDAL.
+
+Supported PLY 1.0 encodings are ASCII, binary little endian, and binary big
+endian. A nonempty `vertex` element must have scalar `x`, `y`, and `z` fields.
+Optional `red`, `green`, and `blue` fields must form a complete RGB set of
+`uchar`/`uint8` or `ushort`/`uint16` values. Eight-bit colors are expanded to the
+LAS 16-bit range. `intensity` and other standard LAS fields recognized by PDAL
+are copied. Vertex list properties are rejected. Mesh faces are ignored: the
+viewer displays their vertices as points, not a surface.
+
+The worker streams PLY into a LAS 1.4 LAZ file named `working.laz`, then runs
+PotreeConverter. Coordinates use a scale of 0.001 in the input coordinate units
+and offsets based on the first point; no reprojection or unit conversion is
+performed. Very large extents exceeding the LAS integer range fail explicitly.
+Normals and custom properties are retained in the unchanged original PLY but
+are not copied to the working LAZ or processing results: the bundled converter
+cannot safely handle PDAL extra-byte attributes. PLY metadata is not used to
+infer a coordinate reference system.
+
+`Cloud.source_file` identifies the downloadable original, while the nullable
+`processing_file` identifies the normalized LAZ. Existing LAS/LAZ records use
+their source directly, without rewriting data. Migration `0003` adds this column
+automatically on startup. API field `sourceAvailable` controls original downloads;
+`processingAvailable` controls viewer processing tools. Both files require the
+owner's authorization, even when the converted viewer assets are public. PLY
+processing results remain LAZ, and deleting a cloud permanently removes both
+its original and its working file. Interrupted jobs recover both files before
+restarting conversion. The working filename is also recorded in `cloud-info.json`
+for importing an existing directory.
+
 ## Point cloud segmentation
 
-Segmentation runs locally and requires a point cloud with its original LAS or
-LAZ file preserved. Points are read and written using
+Segmentation runs locally and requires a point cloud with its original LAS/LAZ
+or normalized working LAZ preserved. Points are read and written using
 `tools/PotreeConverter/laszip.dll`, and the segmentation script runs with the
 application's Python installation.
 
@@ -274,8 +323,8 @@ The output directory contains:
 - `cloud-info.json` with the source point cloud name, the `inside`/`outside`
   mode, the clipping box transformation, and the number of selected points.
 
-Point clouds without an original LAS/LAZ file can still be viewed, but
-segmentation is disabled for them.
+Point clouds without an original LAS/LAZ or normalized working LAZ can still be
+viewed, but segmentation is disabled for them.
 
 ## Manual point removal with a brush
 
@@ -283,7 +332,7 @@ The brush tool removes small, irregular regions without a clipping box.
 Each click picks an actual point in the cloud and creates a spherical
 selection around it with the specified radius.
 
-1. Load a point cloud with its source LAS/LAZ file preserved.
+1. Load a point cloud with its source LAS/LAZ or normalized working LAZ preserved.
 2. Set the brush radius in the point removal section.
 3. Activate point picking in the viewer, then click the unwanted points.
    Dragging still rotates the view, and `Esc` ends point picking.
@@ -304,7 +353,7 @@ Transformations run locally without PDAL. The
 bundled `laszip.dll` library, preserving point attributes and supporting
 both LAS and LAZ files.
 
-1. Load a point cloud with its source LAS/LAZ file preserved.
+1. Load a point cloud with its source LAS/LAZ or normalized working LAZ preserved.
 2. Open the cloud processing panel.
 3. In the transformation section, enter the XYZ translation, XYZ rotation
    in degrees, and XYZ scale.
