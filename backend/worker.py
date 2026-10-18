@@ -14,6 +14,7 @@ from sqlalchemy import select, update
 
 from .config import Settings
 from .database import Database
+from .formats import NORMALIZED_EXTENSIONS
 from .models import Cloud, ProcessingJob, iso_utc, utcnow
 from .ply import ply_pipeline
 from .storage import child_path, ensure_conversion_space, remove_directory, validate_potree
@@ -53,7 +54,7 @@ class Worker:
     def recover(self):
         with self.database.session() as session:
             jobs = list(session.scalars(select(ProcessingJob).where(
-                ProcessingJob.status.in_(("processing", "converting", "segmenting", "transforming", "removing")))))
+                ProcessingJob.status.in_(("processing", "normalizing", "converting", "segmenting", "transforming", "removing")))))
             for job in jobs:
                 cloud = session.get(Cloud, job.cloud_id)
                 if not cloud or cloud.deleted_at is not None or cloud.status in ("deleting", "deleted"):
@@ -124,6 +125,7 @@ class Worker:
         reader = threading.Thread(target=read_output, daemon=True)
         reader.start()
         patterns = {
+            "normalizing": r"Przygotowanie skanu:\s*(\d+(?:\.\d+)?)%",
             "converting": r"(?:^|[\r\n])\s*\[(\d+(?:\.\d+)?)%\s*,",
             "segmenting": r"Segmentacja:\s*(\d+(?:\.\d+)?)%",
             "transforming": r"(?:Analiza|Zapisywanie) transformacji:\s*(\d+(?:\.\d+)?)%",
@@ -212,12 +214,23 @@ class Worker:
                     raise ValueError("Proces nie zwrócił podsumowania operacji.")
                 result = json.loads(summaries[-1])
             original_path = input_path
-            if job.kind == "import" and input_path.suffix.lower() == ".ply":
+            extension = input_path.suffix.lower()
+            if job.kind == "import" and extension in NORMALIZED_EXTENSIONS:
                 if not self.settings.pdal.is_file():
-                    raise ValueError("Import PLY wymaga PDAL. Skonfiguruj PDAL_PATH.")
+                    raise ValueError(f"Import {extension[1:].upper()} wymaga PDAL. Skonfiguruj PDAL_PATH.")
+                pdal_source = original_path
+                if extension in (".pts", ".ptx"):
+                    pdal_source = work / "normalized.ply"
+                    prepared = self.run_command(job_id,
+                        [sys.executable, "-u", "-m", "backend.scan_text", "--input", original_path, "--output", pdal_source],
+                        work / "scan-import.log", "normalizing")
+                    summaries = re.findall(r"^SCAN_IMPORT_RESULT\s+(.+)$", prepared, re.MULTILINE)
+                    if not summaries:
+                        raise ValueError("Proces nie zwrócił podsumowania importu PTS/PTX.")
+                    result = json.loads(summaries[-1])
                 input_path = child_path(work, cloud.processing_file)
                 pipeline_file = work / "ply-pipeline.json"
-                pipeline_file.write_text(json.dumps(ply_pipeline(original_path, input_path, self.settings.clouds_dir)), encoding="utf-8")
+                pipeline_file.write_text(json.dumps(ply_pipeline(pdal_source, input_path, self.settings.clouds_dir)), encoding="utf-8")
                 self.run_command(job_id, [self.settings.pdal, "pipeline", pipeline_file, "--stream"],
                                  work / "ply-import.log", "converting")
             ensure_conversion_space(input_path, self.settings.clouds_dir)

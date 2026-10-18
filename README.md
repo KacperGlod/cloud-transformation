@@ -49,7 +49,7 @@ unless their `cloud-info.json` explicitly declares `public`.
 ## Library, access, and database
 
 The library lists the signed-in user's uploads and processing results. It
-supports LAS/LAZ/PLY uploads, renaming, changing visibility, viewing job logs, and
+supports LAS/LAZ/PLY/PTS/PTX uploads, renaming, changing visibility, viewing job logs, and
 deleting a cloud's files while retaining its metadata. Cloud names need not be unique.
 New clouds have UUID identifiers and directories independent of their names.
 
@@ -61,9 +61,9 @@ be viewed, downloaded, edited, or processed, including through old public links.
 This does not provide an undo or trash feature. Interrupted deletion is finished
 on the next application startup; failed file cleanup can be retried.
 
-Use **Pobierz** on a ready cloud to save its preserved LAS/LAZ/PLY file to your
+Use **Pobierz** on a ready cloud to save its preserved LAS/LAZ/PLY/PTS/PTX file to your
 computer. Downloads use the cloud's current library name with the file's actual
-`.las`, `.laz`, or `.ply` extension, including after renaming the cloud. Characters that
+`.las`, `.laz`, `.ply`, `.pts`, or `.ptx` extension, including after renaming the cloud. Characters that
 cannot be used in file names are replaced with underscores. The metadata field
 `downloadName` matches the name sent in the download response. Cloud directories
 keep their stable identifiers, so duplicate names do not
@@ -87,7 +87,7 @@ first. Sorting is preserved while searching, filtering, and polling for updates.
   processing, job logs, and original-file downloads still require ownership.
 
 The database is `data/app.sqlite3` by default. It contains `User`, `Cloud`,
-`ProcessingJob`, and login-session records. LAS/LAZ/PLY and Potree binaries stay
+`ProcessingJob`, and login-session records. LAS/LAZ/PLY/PTS/PTX and Potree binaries stay
 outside the database. Only dedicated asset directories are served statically;
 database files, Python source, tools, and temporary uploads are not web assets.
 Converted data is served after authorization with HTTP Range support.
@@ -145,7 +145,7 @@ Configuration is read from environment variables:
 | `MAX_UPLOAD_BYTES` | 100 GiB per source file |
 | `POTREE_CONVERTER` | Bundled converter executable |
 | `LASZIP_LIBRARY` | Bundled `laszip.dll` |
-| `PDAL_PATH` | PDAL executable for PLY import; detects `.runtime/pdal/Library/bin/pdal.exe` on Windows, `.runtime/pdal/bin/pdal` elsewhere, then `pdal` on PATH |
+| `PDAL_PATH` | PDAL executable for PLY/PTS/PTX imports; detects `.runtime/pdal/Library/bin/pdal.exe` on Windows, `.runtime/pdal/bin/pdal` elsewhere, then `pdal` on PATH |
 | `START_WORKER` | `1`; set `0` for an independently managed worker |
 | `SECURE_COOKIES` | `0` for localhost HTTP; use `1` with HTTPS |
 | `HOST` / `PORT` | `127.0.0.1` / `1234`; also available as CLI arguments |
@@ -170,7 +170,7 @@ session cookie for subsequent calls.
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
 | `PATCH /api/clouds/{id}` | Owner changes `name` and/or `visibility` |
 | `DELETE /api/clouds/{id}` | Owner permanently removes files and marks the retained cloud record deleted |
-| `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ/PLY as an attachment; supports HEAD and Range |
+| `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ/PLY/PTS/PTX as an attachment; supports HEAD and Range |
 | `GET /api/clouds/{id}/files/{path}` | Authorized files, including Range requests |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | Owner's persistent job states and logs |
 | `POST /api/segmentations` | Queue a clipping-box operation |
@@ -188,7 +188,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_migrations.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
 ```
@@ -224,7 +224,7 @@ switch windows or tabs; click the airplane icon to resume. The instructions
 disappear when flight ends. Clicking inside the viewer during flight keeps the
 instructions visible; press **Esc** to stop flying and restore normal controls.
 
-## LAS/LAZ/PLY import
+## LAS/LAZ/PLY/PTS/PTX import
 
 PotreeConverter should be located at:
 
@@ -235,7 +235,7 @@ tools/PotreeConverter/PotreeConverter.exe
 After starting the project:
 
 1. Click **Dodaj chmurę** in the library (or open the viewer's import panel).
-2. Select a `.las`, `.laz`, or `.ply` file.
+2. Select a `.las`, `.laz`, `.ply`, `.pts`, or `.ptx` file.
 3. Enter a point cloud name and choose its visibility in the library.
 4. Click the button to upload and convert the file.
 
@@ -243,16 +243,18 @@ The file is uploaded only to the local server on your computer.
 PotreeConverter saves new output in `pointclouds/<uuid>/`. Once ready, open the
 cloud from the library. Imports initiated inside the viewer load automatically.
 Conversions run one at a time to avoid overloading the computer.
+When switching clouds, the camera frames the selected cloud; previously loaded
+hidden clouds do not expand its framing bounds.
 
 After a successful conversion, the point cloud directory also contains the
-original LAS/LAZ/PLY file under its original name and the complete PotreeConverter
+original LAS/LAZ/PLY/PTS/PTX file under its original name and the complete PotreeConverter
 output in `conversion.log`. The `cloud-info.json` file stores local information
 about the point cloud's origin. The SQL database is authoritative for current
 names, ownership, visibility, and processing status.
 
-### PLY and PDAL
+### PLY, PTS, PTX and PDAL
 
-PLY imports use the PDAL command-line application, tested with PDAL 2.10.2.
+PLY, PTS, and PTX imports use the PDAL command-line application, tested with PDAL 2.10.2.
 The Python PDAL bindings are not required. Install the native runtime once per
 machine, for example with [Conda](https://pdal.io/en/stable/download.html#conda)
 or micromamba, from the repository root:
@@ -267,7 +269,8 @@ installation elsewhere, set `PDAL_PATH` to the full path of `pdal.exe` (or `pdal
 Keep its DLLs/libraries alongside the executable. PDAL, its environment, and
 package caches are local dependencies and must not be committed. A server
 deployment must provision PDAL as well as PotreeConverter and LASzip.
-`GET /api/health` exposes `plyImportAvailable`; missing PDAL rejects PLY imports
+`GET /api/health` exposes `plyImportAvailable`, `ptsImportAvailable`, and
+`ptxImportAvailable`; missing PDAL rejects these imports
 with HTTP 503 before a job is created. LAS/LAZ do not require PDAL.
 
 Supported PLY 1.0 encodings are ASCII, binary little endian, and binary big
@@ -292,11 +295,49 @@ infer a coordinate reference system.
 their source directly, without rewriting data. Migration `0003` adds this column
 automatically on startup. API field `sourceAvailable` controls original downloads;
 `processingAvailable` controls viewer processing tools. Both files require the
-owner's authorization, even when the converted viewer assets are public. PLY
-processing results remain LAZ, and deleting a cloud permanently removes both
+owner's authorization, even when the converted viewer assets are public.
+Processing results remain LAZ, and deleting a cloud permanently removes both
 its original and its working file. Interrupted jobs recover both files before
 restarting conversion. The working filename is also recorded in `cloud-info.json`
 for importing an existing directory.
+
+### PTS and PTX details
+
+PTS is accepted as ASCII text with a positive point count on the first line.
+Each subsequent point must use one consistent layout: `X Y Z`, `X Y Z I`,
+`X Y Z R G B`, or `X Y Z I R G B`. Whitespace, CRLF, and a UTF-8 BOM on the first
+line are supported. Intensity follows the signed PTS range -2048 through 2047;
+the working LAZ stores the rounded value plus 2048 (0 through 4095). Colors are
+integer values from 0 through 255, expanded to 16-bit LAS RGB. Extra or missing
+points, inconsistent layouts, invalid numbers, and out-of-range attributes fail
+the import rather than silently dropping data. The original file is unchanged.
+
+PTX supports one or more scan blocks in a file. Each block has column and row
+counts, a scanner position and three axes, a 4x4 affine matrix, and exactly
+`columns * rows` point records. Layouts are `X Y Z I` or `X Y Z I R G B`, consistent
+across all scans in the file. The 4x4 matrix is authoritative and is applied
+once to that block's coordinates, using PTX's row-vector convention (translation
+in the final matrix row). Singular/non-affine matrices and non-finite values are
+rejected. Local `0 0 0` measurements are omitted **before** transforming them,
+as missing samples, matching PDAL's default PTX behavior. An import containing
+only missing samples fails. Intensity must be between 0 and 1 and is mapped to
+rounded values from 0 through 4096, following PDAL's PTX convention. RGB uses the
+same 8-to-16-bit mapping as PTS. Skipping missing samples removes their grid
+positions from the working cloud; the downloadable PTX retains the entire scan.
+
+The native PDAL 2.10.2 PTS/PTX readers do not support streaming. To bound memory,
+`python -m backend.scan_text` validates records incrementally and writes a
+temporary binary PLY in batches of 8192 points. PDAL then streams that file to
+`working.laz`, using the same normalization as PLY. This requires additional
+temporary disk space but does not load the complete cloud into RAM. Disk-space
+checks run before normalization and during batch writes. Temporary PLY files
+are never published as viewer assets and are removed with the job directory.
+No additional database migration or native dependency is required beyond the
+PLY setup. The `normalizing` job phase appears as **Przygotowanie** in the library;
+recovery restarts preparation from the retained original. Import statistics
+(input/output counts, skipped samples, number of scan blocks) are recorded in
+the processing job and `cloud-info.json`. A PTX containing multiple stations
+becomes one cloud in the library, with the transformed points combined.
 
 ## Point cloud segmentation
 

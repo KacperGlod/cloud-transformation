@@ -17,8 +17,8 @@ from sqlalchemy.exc import IntegrityError
 from .auth import COOKIE_NAME, current_user, hash_password, start_session, token_hash, user_json, verify_password
 from .config import Settings
 from .database import Database
+from .formats import MAX_HEADER_BYTES, NORMALIZED_EXTENSIONS, SOURCE_EXTENSIONS, validate_source_header
 from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
-from .ply import MAX_HEADER_BYTES, read_ply_header
 from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, Credentials, JobList, JobRead, PointRemoval, Segmentation, Transformation, Visibility
 from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, import_legacy, job_json
 from .storage import child_path, download_filename, remove_directory
@@ -175,6 +175,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True, "backend": "python", "database": database.engine.dialect.name,
             "converterAvailable": settings.converter.is_file(),
             "plyImportAvailable": settings.converter.is_file() and settings.pdal.is_file(),
+            "ptsImportAvailable": settings.converter.is_file() and settings.pdal.is_file(),
+            "ptxImportAvailable": settings.converter.is_file() and settings.pdal.is_file(),
             "segmentationAvailable": settings.laszip.is_file() and (settings.root / "tools/segment_pointcloud.py").is_file(),
             "transformationAvailable": settings.laszip.is_file() and (settings.root / "tools/transform_pointcloud.py").is_file(),
             "pointRemovalAvailable": settings.laszip.is_file() and (settings.root / "tools/remove_points.py").is_file(),
@@ -238,17 +240,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def upload_name(filename):
         if (not filename or len(filename) > 240 or any(char in filename for char in ('/', '\\', ':', '\0'))
-                or Path(filename).suffix.lower() not in (".las", ".laz", ".ply")):
-            raise HTTPException(400, "Dozwolone są pliki LAS, LAZ i PLY z prawidłową nazwą.")
+                or Path(filename).suffix.lower() not in SOURCE_EXTENSIONS):
+            raise HTTPException(400, "Dozwolone są pliki LAS, LAZ, PLY, PTS i PTX z prawidłową nazwą.")
         return filename
 
     async def receive_upload(request, session, user, name, visibility, filename, chunks, declared_length=0):
         filename = upload_name(filename)
-        is_ply = Path(filename).suffix.lower() == ".ply"
+        extension = Path(filename).suffix.lower()
         if not settings.converter.is_file():
             raise HTTPException(503, "Nie znaleziono PotreeConvertera.")
-        if is_ply and not settings.pdal.is_file():
-            raise HTTPException(503, "Import PLY wymaga PDAL. Zainstaluj PDAL na serwerze i skonfiguruj PDAL_PATH.")
+        if extension in NORMALIZED_EXTENSIONS and not settings.pdal.is_file():
+            raise HTTPException(503, f"Import {extension[1:].upper()} wymaga PDAL. Zainstaluj PDAL na serwerze i skonfiguruj PDAL_PATH.")
         if declared_length > settings.max_upload_bytes:
             raise HTTPException(413, "Plik przekracza dopuszczalny rozmiar uploadu.")
         cloud, job = create_job(session, user, name, visibility, filename)
@@ -266,14 +268,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not received:
                 raise HTTPException(400, "Przesłany plik jest pusty.")
             async with await anyio.open_file(input_path, "rb") as stream:
-                header = await stream.read(MAX_HEADER_BYTES if is_ply else 227)
-            if is_ply:
-                try:
-                    read_ply_header(header)
-                except ValueError as error:
-                    raise HTTPException(400, str(error)) from error
-            elif len(header) < 227 or header[:4] != b"LASF":
-                raise HTTPException(400, "Plik nie ma prawidłowego nagłówka LAS/LAZ.")
+                header = await stream.read(MAX_HEADER_BYTES if extension in NORMALIZED_EXTENSIONS else 227)
+            try:
+                validate_source_header(header, extension)
+            except ValueError as error:
+                raise HTTPException(400, str(error)) from error
             cloud.status, cloud.size_bytes = "queued", received
             job.status, job.upload_progress = "queued", 100
             session.commit()

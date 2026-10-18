@@ -19,8 +19,8 @@ export function sizeLabel(value) {
   return `${(value / 1024 ** index).toLocaleString("pl-PL", {maximumFractionDigits: 1})} ${units[index]}`;
 }
 
-export const active = status => ["uploading", "queued", "processing", "converting", "segmenting", "transforming", "removing"].includes(status);
-export const statusLabel = status => ({uploading: "Przesyłanie", queued: "W kolejce", processing: "Przetwarzanie", converting: "Konwersja", segmenting: "Segmentacja", transforming: "Transformacja", removing: "Usuwanie punktów", ready: "Gotowa", completed: "Ukończono", failed: "Błąd"}[status] || status);
+export const active = status => ["uploading", "queued", "processing", "normalizing", "converting", "segmenting", "transforming", "removing"].includes(status);
+export const statusLabel = status => ({uploading: "Przesyłanie", queued: "W kolejce", processing: "Przetwarzanie", normalizing: "Przygotowanie", converting: "Konwersja", segmenting: "Segmentacja", transforming: "Transformacja", removing: "Usuwanie punktów", ready: "Gotowa", completed: "Ukończono", failed: "Błąd"}[status] || status);
 export function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;

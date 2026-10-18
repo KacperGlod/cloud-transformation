@@ -123,7 +123,7 @@ function render() {
   }
   byId("empty_state").hidden = visible.length > 0;
   byId("empty_title").textContent = clouds.length ? "Brak pasujących chmur" : "Twoja biblioteka jest gotowa";
-  byId("empty_description").textContent = clouds.length ? "Zmień nazwę wyszukiwania lub wybrany status." : "Dodaj pierwszy plik LAS, LAZ lub PLY, aby rozpocząć pracę.";
+  byId("empty_description").textContent = clouds.length ? "Zmień nazwę wyszukiwania lub wybrany status." : "Dodaj pierwszy plik LAS, LAZ, PLY, PTS lub PTX, aby rozpocząć pracę.";
   byId("empty_upload").hidden = clouds.length > 0;
   byId("load_status").textContent = `${clouds.length} chmur w bibliotece · Statusy aktualizują się automatycznie`;
   renderJobs();
@@ -182,7 +182,7 @@ byId("upload_file").addEventListener("change", () => {
   const file = byId("upload_file").files[0];
   if (!file) return;
   byId("file_label").textContent = `${file.name} · ${sizeLabel(file.size)}`;
-  if (!byId("upload_name").value) byId("upload_name").value = file.name.replace(/\.(las|laz|ply)$/i, "").slice(0, 120);
+  if (!byId("upload_name").value) byId("upload_name").value = file.name.replace(/\.(las|laz|ply|pts|ptx)$/i, "").slice(0, 120);
 });
 byId("upload_form").addEventListener("submit", event => {
   event.preventDefault();
@@ -211,7 +211,7 @@ byId("upload_form").addEventListener("submit", event => {
     if (request.status === 202) {
       byId("upload_dialog").close();
       byId("upload_form").reset();
-      byId("file_label").textContent = "Oryginalny plik będzie dostępny do pobrania.";
+      byId("file_label").textContent = "LAS, LAZ, PLY, PTS lub PTX. Oryginał będzie dostępny do pobrania.";
       toast("Plik przesłany. Chmura oczekuje na konwersję.");
       await refresh();
     } else if (request.status === 401) {

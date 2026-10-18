@@ -4,7 +4,7 @@
 	<base href="/">
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-	<meta name="description" content="Viewer i konwerter chmur punktów LAS/LAZ/PLY oparty na Potree">
+	<meta name="description" content="Viewer i konwerter chmur punktów LAS/LAZ/PLY/PTS/PTX oparty na Potree">
 	<title>Cloud Transformation</title>
 	<link rel="icon" type="image/svg+xml" sizes="any" href="/assets/favicon.svg">
 
@@ -594,8 +594,8 @@
 				<div class="operation-section-body-inner">
 
 					<div class="form-group">
-						<label for="cloud_file">Plik LAS, LAZ lub PLY</label>
-						<input id="cloud_file" name="cloudFile" type="file" accept=".las,.laz,.ply" required>
+						<label for="cloud_file">Plik LAS, LAZ, PLY, PTS lub PTX</label>
+						<input id="cloud_file" name="cloudFile" type="file" accept=".las,.laz,.ply,.pts,.ptx" required>
 					</div>
 
 					<div class="form-group">
@@ -1244,6 +1244,15 @@
 			return new URL(url, window.location.href).pathname;
 		}
 
+		function fitActivePointCloud() {
+			if (!activePointCloud) return;
+			// Cached clouds remain in the scene; frame only the currently visible cloud.
+			const target = new THREE.Object3D();
+			target.boundingBox = viewer.getBoundingBox([activePointCloud]);
+			viewer.zoomTo(target, 1);
+			viewer.controls.stop();
+		}
+
 		async function loadPointCloud(url, name) {
 			flightControls.stop();
 			const normalizedUrl = normalizeCloudUrl(url);
@@ -1268,7 +1277,7 @@
 				activePointCloud = loadedPointClouds.get(normalizedUrl);
 				activePointCloud.visible = true;
 				activeCloud = cloudDescriptor;
-				viewer.fitToScreen();
+				fitActivePointCloud();
 				localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
 				updateSegmentationControls();
 				hideViewerStatus();
@@ -1297,7 +1306,7 @@
 					loadedPointClouds.set(normalizedUrl, pointCloud);
 					activePointCloud = pointCloud;
 					activeCloud = cloudDescriptor;
-					viewer.fitToScreen();
+					fitActivePointCloud();
 					localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
 					updateSegmentationControls();
 					hideViewerStatus();
@@ -1402,6 +1411,9 @@
 				if (job.status === "queued") {
 					importProgress.removeAttribute("value");
 					setImportStatus("Plik oczekuje w kolejce do konwersji…");
+				} else if (job.status === "normalizing") {
+					importProgress.value = job.progress;
+					setImportStatus(`Przygotowywanie punktów skanu: ${Math.round(job.progress)}%`);
 				} else if (job.status === "converting") {
 					if (job.progress > 0) {
 						importProgress.value = job.progress;
@@ -1759,7 +1771,7 @@
 		cloudFile.addEventListener("change", () => {
 			const file = cloudFile.files[0];
 			if (file) {
-				cloudName.value = file.name.replace(/\.(las|laz|ply)$/i, "");
+				cloudName.value = file.name.replace(/\.(las|laz|ply|pts|ptx)$/i, "");
 			}
 		});
 
@@ -1949,7 +1961,7 @@
 					|| clouds[0];
 				const selectedCloud = clouds.find(cloud => cloud.id === requestedCloudId) || initialCloud;
 				if (!selectedCloud) {
-					showViewerStatus("Brak gotowych chmur. Wróć do biblioteki i dodaj plik LAS, LAZ lub PLY.");
+					showViewerStatus("Brak gotowych chmur. Wróć do biblioteki i dodaj plik LAS, LAZ, PLY, PTS lub PTX.");
 					return;
 				}
 

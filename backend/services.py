@@ -5,11 +5,12 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from .config import Settings
+from .formats import NORMALIZED_EXTENSIONS
 from .models import Cloud, ProcessingJob, User, iso_utc, utcnow
 from .storage import child_path, download_filename, find_source, read_info, remove_directory, validate_potree
 
 
-ACTIVE_STATUSES = ("uploading", "queued", "processing", "converting", "segmenting", "transforming", "removing")
+ACTIVE_STATUSES = ("uploading", "queued", "processing", "normalizing", "converting", "segmenting", "transforming", "removing")
 
 
 def get_cloud(session, identifier: str, user: User | None, *, write=False) -> Cloud:
@@ -80,7 +81,7 @@ def create_job(session, user: User, name: str, visibility: str, filename: str, *
     identifier = uuid.uuid4()
     cloud = Cloud(id=identifier, owner_id=user.id, name=name, visibility=visibility,
                   storage_key=str(identifier), source_file=filename,
-                  processing_file="working.laz" if Path(filename).suffix.lower() == ".ply" else None,
+                  processing_file="working.laz" if Path(filename).suffix.lower() in NORMALIZED_EXTENSIONS else None,
                   status="uploading" if kind == "import" else "queued",
                   parent_id=source.id if source else None)
     session.add(cloud)
