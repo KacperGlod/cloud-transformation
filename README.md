@@ -151,6 +151,12 @@ Configuration is read from environment variables:
 | `HOST` / `PORT` | `127.0.0.1` / `1234`; also available as CLI arguments |
 
 Accounts use scrypt password hashes and expiring HttpOnly session cookies.
+Signed-in users can choose **Zmień hasło** in the library header. Changing a
+password requires the current password and a different new password of 10–256
+characters. The browser also asks to repeat the new password. A successful change
+revokes all existing sessions and issues a new cookie for the current browser.
+The password update and replacement session are committed together; other accounts
+are unaffected. Password changes do not require a database migration.
 Mutating browser requests must come from the application's own origin.
 Keep HTTPS/reverse-proxy configuration aligned with the application's URL.
 The bundled processing tools are Windows binaries; other operating systems need
@@ -165,6 +171,7 @@ session cookie for subsequent calls.
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/auth/me`, `POST /api/auth/logout` | Current account and logout |
+| `POST /api/auth/password` | Change the signed-in user's password with JSON `currentPassword` and `newPassword`; returns 204 and rotates the session cookie |
 | `GET /api/clouds` | Signed-in user's clouds, including pending/failed uploads |
 | `POST /api/clouds` | Multipart upload: `file`, `name`, optional `visibility` |
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |

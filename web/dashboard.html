@@ -11,7 +11,7 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/" aria-label="CloudPoint — biblioteka chmur"><span class="brand-mark" aria-hidden="true">✳</span> CloudPoint <span class="brand-tag">WORKSPACE</span></a>
-    <div class="account"><span id="account_email"></span><button id="logout" class="quiet" type="button">Wyloguj</button></div>
+    <div class="account"><span id="account_email"></span><div class="account-actions"><button id="change_password" class="quiet" type="button">Zmień hasło</button><button id="logout" class="quiet" type="button">Wyloguj</button></div></div>
   </header>
   <main class="workspace">
     <div class="page-heading"><div><p class="eyebrow">PANEL UŻYTKOWNIKA</p><h1>Biblioteka chmur</h1><p class="muted">Przesyłaj, porządkuj i otwieraj chmury punktów w widoku 3D.</p></div><button id="add_cloud" class="primary" type="button"><span aria-hidden="true">＋</span> Dodaj chmurę</button></div>
@@ -40,6 +40,18 @@
   <dialog id="upload_dialog"><form id="upload_form"><div class="dialog-header"><div><p class="eyebrow">IMPORT CHMURY</p><h2>Dodaj chmurę</h2></div><button class="close quiet" type="button" aria-label="Zamknij">×</button></div><p class="muted">Plik zostanie przygotowany do płynnego wyświetlania w przeglądarce.</p><label class="dropzone" for="upload_file"><span aria-hidden="true">↥</span><strong>Wybierz plik chmury</strong><small id="file_label">LAS, LAZ, PLY, PTS lub PTX. Oryginał będzie dostępny do pobrania.</small><input id="upload_file" name="file" type="file" accept=".las,.laz,.ply,.pts,.ptx" required></label><label>Nazwa chmury<input id="upload_name" name="name" maxlength="120" required placeholder="np. Skan budynku — październik"></label><label>Dostęp<select name="visibility"><option value="private">Prywatna — tylko Twoje konto</option><option value="public">Publiczna — każdy, kto ma link</option></select></label><p id="upload_status" class="form-status" role="status"></p><progress id="upload_progress" max="100" value="0" hidden></progress><div class="dialog-actions"><button class="close secondary" type="button">Anuluj</button><button id="upload_submit" class="primary" type="submit">Prześlij i konwertuj</button></div></form></dialog>
   <dialog id="edit_dialog"><form id="edit_form"><div class="dialog-header"><h2>Edytuj chmurę</h2><button class="close quiet" type="button" aria-label="Zamknij">×</button></div><label>Nazwa<input id="edit_name" maxlength="120" required></label><label>Dostęp<select id="edit_visibility"><option value="private">Prywatna — tylko Twoje konto</option><option value="public">Publiczna — każdy, kto ma link</option></select></label><p class="muted">Zmiana nazwy zachowuje dotychczasowy link do chmury.</p><p id="edit_status" class="form-status" role="status"></p><div class="dialog-actions"><button class="close secondary" type="button">Anuluj</button><button class="primary" type="submit">Zapisz zmiany</button></div></form></dialog>
   <dialog id="delete_dialog"><form id="delete_form"><div class="dialog-header"><h2>Usuń chmurę</h2><button class="close quiet" type="button" aria-label="Zamknij">×</button></div><p>Usuniesz chmurę <strong id="delete_name"></strong> wraz z jej plikiem źródłowym i danymi viewera.</p><p class="muted">Ta operacja jest nieodwracalna. Utworzone wcześniej chmury wynikowe pozostaną w bibliotece.</p><p id="delete_status" class="form-status" role="status"></p><div class="dialog-actions"><button class="close secondary" type="button">Anuluj</button><button class="danger" type="submit">Usuń chmurę</button></div></form></dialog>
+  <dialog id="password_dialog" aria-labelledby="password_title" aria-describedby="password_description">
+    <form id="password_form">
+      <div class="dialog-header"><h2 id="password_title">Zmień hasło</h2><button class="close quiet" type="button" aria-label="Zamknij">×</button></div>
+      <p id="password_description" class="muted">Po zmianie hasła pozostaniesz zalogowany w tej przeglądarce. Pozostałe sesje Twojego konta zostaną wylogowane.</p>
+      <label>Obecne hasło<input id="current_password" name="currentPassword" type="password" autocomplete="current-password" maxlength="256" required autofocus></label>
+      <label>Nowe hasło<input id="new_password" name="newPassword" type="password" autocomplete="new-password" minlength="10" maxlength="256" aria-describedby="password_hint" required></label>
+      <p id="password_hint" class="muted password-hint">Od 10 do 256 znaków. Nowe hasło musi różnić się od obecnego.</p>
+      <label>Powtórz nowe hasło<input id="confirm_password" name="confirmPassword" type="password" autocomplete="new-password" minlength="10" maxlength="256" required></label>
+      <p id="password_status" class="form-status" role="status"></p>
+      <div class="dialog-actions"><button class="close secondary" type="button">Anuluj</button><button id="password_submit" class="primary" type="submit">Zapisz hasło</button></div>
+    </form>
+  </dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

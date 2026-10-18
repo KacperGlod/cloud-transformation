@@ -12,13 +12,14 @@ class Visibility(StrEnum):
 
 
 CloudName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+Password = Annotated[str, StringConstraints(min_length=10, max_length=256)]
 Vector = Annotated[list[FiniteFloat], Field(min_length=3, max_length=3)]
 Matrix = Annotated[list[FiniteFloat], Field(min_length=16, max_length=16)]
 
 
 class Credentials(BaseModel):
     email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254)]
-    password: Annotated[str, StringConstraints(min_length=10, max_length=256)]
+    password: Password
 
     @field_validator("email")
     @classmethod
@@ -27,6 +28,12 @@ class Credentials(BaseModel):
         if value.count("@") != 1 or any(char.isspace() for char in value) or not all(value.split("@")):
             raise ValueError("Podaj prawidłowy adres e-mail.")
         return value
+
+
+class PasswordChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    currentPassword: Annotated[str, StringConstraints(min_length=1, max_length=256)]
+    newPassword: Password
 
 
 class CloudUpdate(BaseModel):

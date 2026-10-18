@@ -14,12 +14,12 @@ from filelock import FileLock
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
-from .auth import COOKIE_NAME, current_user, hash_password, start_session, token_hash, user_json, verify_password
+from .auth import COOKIE_NAME, change_password, current_user, hash_password, start_session, token_hash, user_json, verify_password
 from .config import Settings
 from .database import Database
 from .formats import MAX_HEADER_BYTES, NORMALIZED_EXTENSIONS, SOURCE_EXTENSIONS, validate_source_header
 from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
-from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, Credentials, JobList, JobRead, PointRemoval, Segmentation, Transformation, Visibility
+from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, Credentials, JobList, JobRead, PasswordChange, PointRemoval, Segmentation, Transformation, Visibility
 from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, import_legacy, job_json
 from .storage import child_path, download_filename, remove_directory
 
@@ -160,6 +160,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/auth/me", response_model=AccountRead)
     def me(request: Request, session=Depends(get_session)):
         return {"user": user_json(current_user(request, session))}
+
+    @app.post("/api/auth/password", status_code=204)
+    def update_password(body: PasswordChange, request: Request, response: Response,
+                        session=Depends(get_session)):
+        user = current_user(request, session)
+        change_password(session, user, body.currentPassword, body.newPassword)
+        start_session(session, user, response, settings)
 
     @app.post("/api/auth/logout", status_code=204)
     def logout(request: Request, response: Response, session=Depends(get_session)):

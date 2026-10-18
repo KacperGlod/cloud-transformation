@@ -6,12 +6,14 @@ import uuid
 from urllib.parse import quote
 
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 import pytest
 from sqlalchemy import select
 
 from backend.app import create_app
+from backend.auth import COOKIE_NAME, change_password, token_hash, verify_password
 from backend.config import Settings
-from backend.models import Cloud, ProcessingJob, User, iso_utc, utcnow
+from backend.models import Cloud, LoginSession, ProcessingJob, User, iso_utc, utcnow
 from backend.worker import Worker
 
 
@@ -105,6 +107,132 @@ def test_registration_login_logout_and_private_web_root(application):
     assert client.get("/api/auth/me").status_code == 401
     assert client.post("/api/auth/login", json={"email": user["email"], "password": "wrong-password-123"}).status_code == 401
     assert client.post("/api/auth/login", json={"email": user["email"], "password": "test-password-123"}).status_code == 200
+
+
+def test_password_change_rotates_sessions_and_preserves_other_accounts(application):
+    app, client, settings = application
+    owner, first_cookies = register(client)
+    first_cookie = next(iter(client.cookies.jar))
+    cloud_id, _ = seed_cloud(app, settings, owner)
+    client.post("/api/auth/login", json={"email": owner["email"], "password": "test-password-123"})
+    second_cookies = dict(client.cookies)
+    other, other_cookies = register(client, "other@example.com")
+    client.cookies.clear()
+    client.cookies.jar.set_cookie(first_cookie)
+    response = client.post("/api/auth/password", json={
+        "currentPassword": "test-password-123", "newPassword": "new-password-456",
+    })
+    assert response.status_code == 204
+    assert not response.content
+    replacement_cookies = dict(client.cookies)
+    assert replacement_cookies[COOKIE_NAME] not in (first_cookies[COOKIE_NAME], second_cookies[COOKIE_NAME])
+    cookie = response.headers["set-cookie"].lower()
+    assert "httponly" in cookie and "samesite=strict" in cookie and "path=/" in cookie
+    assert response.headers["cache-control"] == "private, no-store"
+    assert client.get("/api/auth/me").json()["user"] == owner
+    assert client.get(f"/api/clouds/{cloud_id}").status_code == 200
+    with app.state.database.session() as session:
+        user = session.get(User, uuid.UUID(owner["id"]))
+        assert user.password_hash != "new-password-456"
+        assert verify_password("new-password-456", user.password_hash)
+        assert not verify_password("test-password-123", user.password_hash)
+        sessions = list(session.scalars(select(LoginSession).where(LoginSession.user_id == user.id)))
+        assert len(sessions) == 1
+        assert sessions[0].token_hash == token_hash(replacement_cookies[COOKIE_NAME])
+    for cookies in (first_cookies, second_cookies):
+        use_cookies(client, cookies)
+        assert client.get("/api/auth/me").status_code == 401
+    use_cookies(client, other_cookies)
+    assert client.get("/api/auth/me").json()["user"] == other
+    assert client.post("/api/auth/login", json={"email": other["email"], "password": "test-password-123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": owner["email"], "password": "test-password-123"}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": owner["email"], "password": "new-password-456"}).status_code == 200
+
+
+@pytest.mark.parametrize(("current", "new", "status"), [
+    ("incorrect-password", "new-password-456", 400),
+    ("test-password-123", "test-password-123", 400),
+    ("test-password-123", "short", 422),
+    ("test-password-123", "a" * 257, 422),
+    ("", "new-password-456", 422),
+    ("a" * 257, "new-password-456", 422),
+])
+def test_invalid_password_changes_preserve_password_and_session(application, current, new, status):
+    app, client, _ = application
+    owner, cookies = register(client)
+    response = client.post("/api/auth/password", json={"currentPassword": current, "newPassword": new})
+    assert response.status_code == status
+    assert "set-cookie" not in response.headers
+    assert dict(client.cookies) == cookies
+    assert client.get("/api/auth/me").json()["user"] == owner
+    with app.state.database.session() as session:
+        user = session.get(User, uuid.UUID(owner["id"]))
+        assert verify_password("test-password-123", user.password_hash)
+    if current:
+        assert current not in response.text
+    assert new not in response.text
+
+
+def test_password_change_requires_live_session_and_same_origin(application):
+    app, client, _ = application
+    body = {"currentPassword": "test-password-123", "newPassword": "new-password-456"}
+    assert client.post("/api/auth/password", json=body).status_code == 401
+    _, cookies = register(client)
+    assert client.post("/api/auth/password", json=body, headers={"Origin": "https://other.example"}).status_code == 403
+    assert client.post("/api/auth/password", json=body, headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    assert client.post("/api/auth/password", json={**body, "userId": str(uuid.uuid4())}).status_code == 422
+    with app.state.database.session() as session:
+        session.get(LoginSession, token_hash(cookies[COOKIE_NAME])).expires_at = datetime(2000, 1, 1)
+        session.commit()
+    assert client.post("/api/auth/password", json=body).status_code == 401
+
+
+def test_password_change_rolls_back_if_session_rotation_fails(application, monkeypatch):
+    app, client, _ = application
+    owner, cookies = register(client)
+
+    def fail_token_creation(_length):
+        raise RuntimeError("Session token could not be created")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("backend.auth.secrets.token_urlsafe", fail_token_creation)
+        with pytest.raises(RuntimeError, match="Session token could not be created"):
+            client.post("/api/auth/password", json={
+                "currentPassword": "test-password-123", "newPassword": "new-password-456",
+            })
+    assert dict(client.cookies) == cookies
+    assert client.get("/api/auth/me").json()["user"] == owner
+    with app.state.database.session() as session:
+        assert verify_password("test-password-123", session.get(User, uuid.UUID(owner["id"])).password_hash)
+    assert client.post("/api/auth/login", json={"email": owner["email"], "password": "test-password-123"}).status_code == 200
+
+
+def test_stale_password_change_cannot_overwrite_a_new_password(application):
+    app, client, _ = application
+    owner, _ = register(client)
+    with app.state.database.session() as stale_session:
+        stale_user = stale_session.get(User, uuid.UUID(owner["id"]))
+        assert client.post("/api/auth/password", json={
+            "currentPassword": "test-password-123", "newPassword": "new-password-456",
+        }).status_code == 204
+        with pytest.raises(HTTPException) as error:
+            change_password(stale_session, stale_user, "test-password-123", "stale-password-789")
+        assert error.value.status_code == 409
+    assert client.get("/api/auth/me").status_code == 200
+    assert client.post("/api/auth/login", json={"email": owner["email"], "password": "new-password-456"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": owner["email"], "password": "stale-password-789"}).status_code == 401
+
+
+def test_password_change_preserves_whitespace_and_unicode(application):
+    _, client, _ = application
+    owner, _ = register(client)
+    new_password = "  Długie hasło żółwia 🔑  "
+    assert client.post("/api/auth/password", json={
+        "currentPassword": "test-password-123", "newPassword": new_password,
+    }).status_code == 204
+    client.post("/api/auth/logout")
+    assert client.post("/api/auth/login", json={"email": owner["email"], "password": new_password.strip()}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": owner["email"], "password": new_password}).status_code == 200
 
 
 def test_owner_isolation_visibility_and_range_requests(application):

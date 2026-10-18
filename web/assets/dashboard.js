@@ -10,6 +10,7 @@ let selected = null;
 let timer;
 let toastTimer;
 let uploading = false;
+let changingPassword = false;
 
 function toast(message) {
   byId("toast").textContent = message;
@@ -26,9 +27,43 @@ function openUpload() {
 byId("add_cloud").addEventListener("click", openUpload);
 byId("empty_upload").addEventListener("click", openUpload);
 for (const button of document.querySelectorAll("dialog .close")) {
-  button.addEventListener("click", () => { if (!uploading) button.closest("dialog").close(); });
+  button.addEventListener("click", () => {
+    const dialog = button.closest("dialog");
+    if (dialog.id === "password_dialog" ? !changingPassword : !uploading) dialog.close();
+  });
 }
 byId("upload_dialog").addEventListener("cancel", event => { if (uploading) event.preventDefault(); });
+byId("password_dialog").addEventListener("cancel", event => { if (changingPassword) event.preventDefault(); });
+byId("password_dialog").addEventListener("close", () => {
+  byId("password_form").reset();
+  byId("password_status").textContent = "";
+});
+byId("change_password").addEventListener("click", () => byId("password_dialog").showModal());
+byId("password_form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (changingPassword) return;
+  byId("password_status").textContent = "";
+  if (byId("new_password").value !== byId("confirm_password").value) {
+    byId("password_status").textContent = "Nowe hasła nie są takie same.";
+    byId("confirm_password").focus();
+    return;
+  }
+  const credentials = {currentPassword: byId("current_password").value, newPassword: byId("new_password").value};
+  changingPassword = true;
+  for (const control of byId("password_form").elements) control.disabled = true;
+  byId("password_submit").textContent = "Zapisywanie…";
+  try {
+    await api("/api/auth/password", json("POST", credentials));
+    byId("password_dialog").close();
+    toast("Hasło zostało zmienione.");
+  } catch (error) {
+    byId("password_status").textContent = error.message;
+  } finally {
+    changingPassword = false;
+    for (const control of byId("password_form").elements) control.disabled = false;
+    byId("password_submit").textContent = "Zapisz hasło";
+  }
+});
 
 function badge(status) {
   return element("span", `badge ${active(status) ? "active" : status === "completed" ? "ready" : status}`, statusLabel(status));
