@@ -232,6 +232,10 @@ freely through space without gravity or collisions. Flight also stops when you
 switch windows or tabs; click the airplane icon to resume. The instructions
 disappear when flight ends. Clicking inside the viewer during flight keeps the
 instructions visible; press **Esc** to stop flying and restore normal controls.
+Leaving flight keeps the final camera position, viewing direction, and perspective
+projection, including when flight stops because the window loses focus. The
+previous projection is restored only if flight could not start or was cancelled
+before the mouse was locked.
 
 ## LAS/LAZ/PLY/PTS/PTX import
 

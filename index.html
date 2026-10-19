@@ -809,6 +809,7 @@
 	<script type="module">
 		import * as THREE from "./libs/three.js/build/three.module.js";
 		import {createComparisonLink} from "/assets/comparison-link.js";
+		import {resumeAfterFlight} from "/assets/flight-navigation.js";
 
 		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
 		const LAST_CLOUD_KEY = "cloud-transformation:last-cloud";
@@ -877,6 +878,7 @@
 		const flightCrosshair = document.getElementById("flight_crosshair");
 		let previousControls = null;
 		let previousCameraMode = null;
+		let flightStarted = false;
 		const loadedPointClouds = new Map();
 		const pointRemovalMarkerGeometry = new THREE.SphereGeometry(1, 24, 16);
 		const pointRemovalMarkerFill = new THREE.MeshBasicMaterial({
@@ -941,13 +943,11 @@
 
 		function finishFlight() {
 			if (viewer.controls === flightControls) {
-				viewer.setControls(previousControls || viewer.orbitControls);
-			}
-			if (previousCameraMode !== null) {
-				viewer.setCameraMode(previousCameraMode);
+				resumeAfterFlight(viewer, previousControls || viewer.orbitControls, previousCameraMode, flightStarted);
 			}
 			previousControls = null;
 			previousCameraMode = null;
+			flightStarted = false;
 			document.body.classList.remove("flight-active");
 			setFlightPanelOpen(false);
 			flightCrosshair.hidden = true;
@@ -969,6 +969,7 @@
 			flightMessage.textContent = "";
 			previousControls = viewer.controls;
 			previousCameraMode = viewer.scene.cameraMode;
+			flightStarted = false;
 			previousControls?.stop?.();
 			previousControls?.stopTweens?.();
 			viewer.inputHandler.drag = null;
@@ -979,6 +980,7 @@
 			flightControls.start();
 		});
 		flightControls.addEventListener("start", () => {
+			flightStarted = true;
 			setFlightPanelOpen(true);
 			document.body.classList.add("flight-active");
 			flightCrosshair.hidden = false;

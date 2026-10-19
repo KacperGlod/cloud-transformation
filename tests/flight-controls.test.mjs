@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {FlightControls} from "../src/navigation/FlightControls.js";
 import {View} from "../src/viewer/View.js";
+import {OrbitControls} from "../src/navigation/OrbitControls.js";
+import {resumeAfterFlight} from "../web/assets/flight-navigation.js";
 
 function setup(t, {immediateLock = true} = {}) {
 	const document = new EventTarget();
@@ -223,4 +225,69 @@ test("a late pointer lock after cancellation is released", t => {
 	input(document, "pointerlockchange");
 	assert.equal(document.pointerLockElement, null);
 	assert.equal(controls.active, false);
+});
+
+test("leaving flight keeps the final pose and perspective across subsequent orbit updates", t => {
+	for (const reason of ["escape", "blur", "hidden", "unlock", "stop"]) {
+		const {controls, view, viewer, document, window} = setup(t);
+		viewer.scene.cameraMode = 1;
+		viewer.controls = controls;
+		viewer.setCameraMode = mode => { viewer.scene.cameraMode = mode; };
+		viewer.setControls = next => {
+			viewer.controls.enabled = false;
+			next.enabled = true;
+			viewer.controls = next;
+		};
+		const orbit = new OrbitControls(viewer);
+		orbit.setScene(viewer.scene);
+		let cancelledTween = false;
+		orbit.yawDelta = 0.8;
+		orbit.pitchDelta = 0.3;
+		orbit.panDelta.set(0.5, 0.5);
+		orbit.radiusDelta = 100;
+		orbit.tweens.push({stop() { cancelledTween = true; }});
+		controls.addEventListener("end", () => resumeAfterFlight(viewer, orbit, 0, true));
+		view.position.set(500000, 6000000, 100);
+		input(document, "keydown", {code: "KeyW"});
+		input(document, "mousemove", {movementX: 150, movementY: 75});
+		fly(controls);
+		const position = view.position.clone();
+		const {yaw, pitch, radius} = view;
+		if (reason === "escape") input(document, "keydown", {code: "Escape"});
+		if (reason === "blur") input(window, "blur");
+		if (reason === "hidden") {
+			document.hidden = true;
+			input(document, "visibilitychange");
+		}
+		if (reason === "unlock") document.exitPointerLock();
+		if (reason === "stop") controls.stop();
+		for (let frame = 0; frame < 120; frame++) orbit.update(1 / 60);
+		close(view.position.distanceTo(position), 0, 1e-7);
+		assert.equal(view.yaw, yaw, reason);
+		assert.equal(view.pitch, pitch, reason);
+		assert.equal(view.radius, radius, reason);
+		assert.equal(viewer.scene.cameraMode, 1, reason);
+		assert.equal(viewer.controls, orbit, reason);
+		assert.equal(cancelledTween, true, reason);
+		assert.equal(viewer.inputHandler.drag, null, reason);
+		assert.deepEqual(viewer.inputHandler.pressedKeys, {}, reason);
+	}
+});
+
+test("failed and cancelled flight entry restore the previous projection without moving the view", t => {
+	for (const reason of ["error", "cancel"]) {
+		const {controls, viewer, view, document} = setup(t, {immediateLock: false});
+		viewer.scene.cameraMode = 1;
+		viewer.setCameraMode = mode => { viewer.scene.cameraMode = mode; };
+		const orbit = new OrbitControls(viewer);
+		viewer.setControls = next => { viewer.controls = next; };
+		controls.addEventListener(reason === "error" ? "error" : "end", () => resumeAfterFlight(viewer, orbit, 0, false));
+		view.position.set(10, 20, 30);
+		const position = view.position.clone();
+		if (reason === "error") input(document, "pointerlockerror");
+		else controls.stop();
+		assert.deepEqual(view.position, position, reason);
+		assert.equal(viewer.scene.cameraMode, 0, reason);
+		assert.equal(viewer.controls, orbit, reason);
+	}
 });
