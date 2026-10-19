@@ -2,7 +2,7 @@ export function createComparisonLink(panel, currentCloud) {
   const link = document.createElement("a");
   link.textContent = "Porównaj z oryginałem ↗";
   link.className = "secondary-button";
-  link.style.cssText = "display:block;text-align:center;margin-top:.75rem;text-decoration:none";
+  link.style.cssText = "display:flex;align-items:center;justify-content:center;text-align:center;margin-top:.75rem;text-decoration:none";
   const container = document.createElement("div");
   container.append(link);
   container.hidden = true;
