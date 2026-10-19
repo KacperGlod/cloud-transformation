@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {FlightControls} from "../src/navigation/FlightControls.js";
 import {View} from "../src/viewer/View.js";
 import {OrbitControls} from "../src/navigation/OrbitControls.js";
-import {resumeAfterFlight} from "../web/assets/flight-navigation.js";
+import {getFlightOrbitRadius, resumeAfterFlight} from "../web/assets/flight-navigation.js";
+import * as THREE from "../libs/three.js/build/three.module.js";
 
 function setup(t, {immediateLock = true} = {}) {
 	const document = new EventTarget();
@@ -246,13 +247,13 @@ test("leaving flight keeps the final pose and perspective across subsequent orbi
 		orbit.panDelta.set(0.5, 0.5);
 		orbit.radiusDelta = 100;
 		orbit.tweens.push({stop() { cancelledTween = true; }});
-		controls.addEventListener("end", () => resumeAfterFlight(viewer, orbit, 0, true));
+		controls.addEventListener("end", () => resumeAfterFlight(viewer, orbit, 0, true, 12));
 		view.position.set(500000, 6000000, 100);
 		input(document, "keydown", {code: "KeyW"});
 		input(document, "mousemove", {movementX: 150, movementY: 75});
 		fly(controls);
 		const position = view.position.clone();
-		const {yaw, pitch, radius} = view;
+		const {yaw, pitch} = view;
 		if (reason === "escape") input(document, "keydown", {code: "Escape"});
 		if (reason === "blur") input(window, "blur");
 		if (reason === "hidden") {
@@ -265,7 +266,7 @@ test("leaving flight keeps the final pose and perspective across subsequent orbi
 		close(view.position.distanceTo(position), 0, 1e-7);
 		assert.equal(view.yaw, yaw, reason);
 		assert.equal(view.pitch, pitch, reason);
-		assert.equal(view.radius, radius, reason);
+		assert.equal(view.radius, 12, reason);
 		assert.equal(viewer.scene.cameraMode, 1, reason);
 		assert.equal(viewer.controls, orbit, reason);
 		assert.equal(cancelledTween, true, reason);
@@ -290,4 +291,58 @@ test("failed and cancelled flight entry restore the previous projection without 
 		assert.equal(viewer.scene.cameraMode, 0, reason);
 		assert.equal(viewer.controls, orbit, reason);
 	}
+});
+
+test("orbit uses the viewed point's depth instead of flight speed, with no camera jump", t => {
+	const {viewer, controls, view} = setup(t);
+	Object.assign(viewer.renderer.domElement, {clientWidth: 1000, clientHeight: 800});
+	viewer.scene.cameraP = new THREE.PerspectiveCamera(60, 1.25, 0.1, 10000);
+	viewer.setControls = next => { viewer.controls = next; };
+	const pointcloud = {visible: true};
+	const orbit = new OrbitControls(viewer);
+	orbit.setScene(viewer.scene);
+	for (const speed of [10, 1000, 1000000]) {
+		view.position.set(500000, 6000000, 100);
+		view.yaw = 0;
+		view.pitch = 0;
+		viewer.speed = speed;
+		controls.update(1 / 60);
+		const position = view.position.clone();
+		const radius = getFlightOrbitRadius(viewer, pointcloud, 50, (mouse, camera, targetViewer, clouds) => {
+			assert.deepEqual(mouse.toArray(), [500, 400]);
+			assert.deepEqual(camera.position, position);
+			close(camera.getWorldDirection(new THREE.Vector3()).dot(view.direction), 1);
+			assert.equal(targetViewer, viewer);
+			assert.deepEqual(clouds, [pointcloud]);
+			return {location: position.clone().add(new THREE.Vector3(0, 12, 0))};
+		});
+		resumeAfterFlight(viewer, orbit, 0, true, radius);
+		assert.equal(view.radius, 12);
+		assert.deepEqual(view.position, position);
+		orbit.dispatchEvent({type: "drag", drag: {object: null, mouse: 1, lastDrag: {x: 10, y: 0}}});
+		orbit.update(0.05);
+		close(view.yaw, -0.05);
+		assert.ok(view.position.distanceTo(position) < 1, `ordinary drag must stay local at flight speed ${speed}`);
+		assert.equal(viewer.getMoveSpeed(), 12);
+	}
+});
+
+test("orbit radius falls back to active cloud bounds, then preflight radius when looking away", t => {
+	const {viewer, view} = setup(t);
+	Object.assign(viewer.renderer.domElement, {clientWidth: 1000, clientHeight: 800});
+	viewer.scene.cameraP = new THREE.PerspectiveCamera();
+	view.position.set(500000, 6000000, 100);
+	const pointcloud = {visible: true};
+	viewer.getBoundingBox = clouds => {
+		assert.deepEqual(clouds, [pointcloud]);
+		return new THREE.Box3(new THREE.Vector3(499995, 6000010, 95), new THREE.Vector3(500005, 6000020, 105));
+	};
+	view.radius = 3000000;
+	assert.equal(getFlightOrbitRadius(viewer, pointcloud, 42, () => null), 10);
+	assert.equal(getFlightOrbitRadius(viewer, pointcloud, 42, () => ({location: view.position.clone()})), 10);
+	view.yaw = Math.PI;
+	assert.equal(getFlightOrbitRadius(viewer, pointcloud, 42, () => null), 42);
+	assert.equal(getFlightOrbitRadius(viewer, null, 42, () => null), 42);
+	pointcloud.visible = false;
+	assert.equal(getFlightOrbitRadius(viewer, pointcloud, 42, () => null), 42);
 });

@@ -236,6 +236,11 @@ Leaving flight keeps the final camera position, viewing direction, and perspecti
 projection, including when flight stops because the window loses focus. The
 previous projection is restored only if flight could not start or was cancelled
 before the mouse was locked.
+When orbit controls resume, their pivot distance is set from the cloud at the
+center of the view, with the active cloud's bounds as a fallback. Looking away
+from the cloud retains the preflight orbit distance. Flight speed does not
+determine the orbit radius, so rotation and panning work normally immediately
+after leaving flight, including after changing flight speed or repeated flights.
 
 ## LAS/LAZ/PLY/PTS/PTX import
 

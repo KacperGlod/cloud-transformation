@@ -809,7 +809,7 @@
 	<script type="module">
 		import * as THREE from "./libs/three.js/build/three.module.js";
 		import {createComparisonLink} from "/assets/comparison-link.js";
-		import {resumeAfterFlight} from "/assets/flight-navigation.js";
+		import {getFlightOrbitRadius, resumeAfterFlight} from "/assets/flight-navigation.js";
 
 		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
 		const LAST_CLOUD_KEY = "cloud-transformation:last-cloud";
@@ -878,6 +878,7 @@
 		const flightCrosshair = document.getElementById("flight_crosshair");
 		let previousControls = null;
 		let previousCameraMode = null;
+		let previousOrbitRadius = null;
 		let flightStarted = false;
 		const loadedPointClouds = new Map();
 		const pointRemovalMarkerGeometry = new THREE.SphereGeometry(1, 24, 16);
@@ -943,10 +944,15 @@
 
 		function finishFlight() {
 			if (viewer.controls === flightControls) {
-				resumeAfterFlight(viewer, previousControls || viewer.orbitControls, previousCameraMode, flightStarted);
+				const controls = previousControls || viewer.orbitControls;
+				const radius = flightStarted && controls === viewer.orbitControls
+					? getFlightOrbitRadius(viewer, activePointCloud, previousOrbitRadius, Potree.Utils.getMousePointCloudIntersection)
+					: null;
+				resumeAfterFlight(viewer, controls, previousCameraMode, flightStarted, radius);
 			}
 			previousControls = null;
 			previousCameraMode = null;
+			previousOrbitRadius = null;
 			flightStarted = false;
 			document.body.classList.remove("flight-active");
 			setFlightPanelOpen(false);
@@ -969,6 +975,7 @@
 			flightMessage.textContent = "";
 			previousControls = viewer.controls;
 			previousCameraMode = viewer.scene.cameraMode;
+			previousOrbitRadius = viewer.scene.view.radius;
 			flightStarted = false;
 			previousControls?.stop?.();
 			previousControls?.stopTweens?.();
