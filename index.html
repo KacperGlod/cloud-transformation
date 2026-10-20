@@ -13,6 +13,7 @@
 	<link rel="stylesheet" href="./libs/openlayers3/ol.css">
 	<link rel="stylesheet" href="./libs/spectrum/spectrum.css">
 	<link rel="stylesheet" href="./libs/jstree/themes/mixed/style.css">
+	<link rel="stylesheet" href="/assets/viewer-projects.css">
 
 	<style>
 		:root {
@@ -579,6 +580,24 @@
 			<button id="cloud_load" class="secondary-button" type="button">Wczytaj</button>
 		</div>
 
+		<details id="project_panel" hidden>
+			<summary>Projekty</summary>
+			<p class="helper-text">Zapisz kamerę, pomiary, adnotacje, przekroje, boksy i ustawienia widoku.</p>
+			<label for="project_name">Nazwa projektu</label>
+			<input id="project_name" type="text" maxlength="120" placeholder="np. Pomiary elewacji">
+			<div class="project-actions">
+				<button id="project_save" class="primary-button" type="button">Zapisz projekt</button>
+				<button id="project_copy" class="secondary-button" type="button" disabled>Zapisz kopię</button>
+			</div>
+			<label for="project_list">Zapisane projekty tej chmury</label>
+			<select id="project_list"><option value="">Brak zapisanych projektów</option></select>
+			<div class="project-actions">
+				<button id="project_open" class="secondary-button" type="button" disabled>Otwórz projekt</button>
+				<button id="project_delete" class="secondary-button" type="button" disabled>Usuń zapis</button>
+			</div>
+			<p id="project_status" role="status">Projekt zapisuje się na Twoim koncie.</p>
+		</details>
+
 		<hr class="panel-divider">
 
 		<form id="import_form" class="operation-section">
@@ -810,8 +829,11 @@
 		import * as THREE from "./libs/three.js/build/three.module.js";
 		import {createComparisonLink} from "/assets/comparison-link.js";
 		import {getFlightOrbitRadius, resumeAfterFlight} from "/assets/flight-navigation.js";
+		import {createProjectPanel} from "/assets/viewer-projects.js";
+		import {api} from "/assets/common.js";
 
 		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
+		const requestedProjectId = new URLSearchParams(window.location.search).get("project");
 		const LAST_CLOUD_KEY = "cloud-transformation:last-cloud";
 
 		const viewerStatus = document.getElementById("viewer_status");
@@ -907,6 +929,22 @@
 		let pointRemovalPicking = false;
 		let pointRemovalMouseDown = null;
 		window.viewer = viewer;
+		const projectPanel = createProjectPanel({
+			viewer, getCloud: () => activeCloud, getPointcloud: () => activePointCloud,
+			async loadCloud(identifier) {
+				let cloud = availableClouds.find(cloud => cloud.id === identifier);
+				if (!cloud) {
+					cloud = await api(`/api/clouds/${encodeURIComponent(identifier)}`);
+					availableClouds.push(cloud);
+					await refreshCloudList();
+				}
+				cloudList.value = cloud.url;
+				await loadPointCloud(cloud.url, cloud.name);
+			},
+			stopEditing() { flightControls.stop(); setPointRemovalPicking(false); },
+			afterRestore() { clearPointRemovalSelections(); refreshClippingBoxes(); updatePivotControls(); },
+			hasPendingSelections: () => pointRemovalSelections.length > 0,
+		});
 
 		viewer.setEDLEnabled(true);
 		viewer.setFOV(60);
@@ -1265,8 +1303,12 @@
 		}
 
 		async function loadPointCloud(url, name) {
-			flightControls.stop();
 			const normalizedUrl = normalizeCloudUrl(url);
+			if (!projectPanel.allowCloudChange(normalizedUrl)) {
+				cloudList.value = activeCloud?.url || "";
+				return;
+			}
+			flightControls.stop();
 			const previousUrl = activeCloud?.url ? normalizeCloudUrl(activeCloud.url) : null;
 			if (previousUrl && previousUrl !== normalizedUrl) {
 				setPointRemovalPicking(false);
@@ -1293,6 +1335,7 @@
 				localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
 				updateSegmentationControls();
 				hideViewerStatus();
+				await projectPanel.cloudChanged();
 				return;
 			}
 
@@ -1326,6 +1369,7 @@
 					resolve();
 				});
 			});
+			await projectPanel.cloudChanged();
 		}
 
 		async function refreshCloudList() {
@@ -1957,6 +2001,8 @@
 
 		async function initialize() {
 			try {
+				const savedProject = requestedProjectId ? await api(`/api/projects/${encodeURIComponent(requestedProjectId)}`) : null;
+				if (savedProject) requestedCloudId = savedProject.cloudId;
 				const healthResponse = await fetch("/api/health", { cache: "no-store" });
 				const health = await healthResponse.json();
 				if (!health.converterAvailable) {
@@ -1980,6 +2026,10 @@
 
 				cloudList.value = selectedCloud.url;
 				await loadPointCloud(selectedCloud.url, selectedCloud.name);
+				if (savedProject) {
+					await new Promise(resolve => viewer.onGUILoaded(resolve));
+					await projectPanel.open(savedProject, true);
+				}
 			} catch (error) {
 				showViewerStatus(error.message, "error");
 			}

@@ -22,6 +22,9 @@ from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
 from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, ComparisonRead, Credentials, JobList, JobRead, PasswordChange, PointRemoval, Segmentation, Transformation, Visibility
 from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, get_comparison, import_legacy, job_json
 from .storage import child_path, download_filename, remove_directory
+from .project_routes import register_project_routes
+from .project_schemas import MAX_PROJECT_BYTES
+from .projects import get_project, project_cloud
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -109,6 +112,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             expected = f"{request.url.scheme}://{request.url.netloc}"
             if (origin and origin != expected) or request.headers.get("sec-fetch-site") == "cross-site":
                 return JSONResponse({"error": "Żądanie musi pochodzić z tej aplikacji."}, status_code=403)
+            if request.url.path.startswith("/api/projects") and request.method in ("POST", "PUT"):
+                try:
+                    length = int(request.headers.get("content-length", 0))
+                except ValueError:
+                    return JSONResponse({"error": "Nieprawidłowy rozmiar zapisu projektu."}, status_code=400)
+                if length > MAX_PROJECT_BYTES + 4096:
+                    return JSONResponse({"error": "Zapis projektu przekracza 2 MiB."}, status_code=413)
             if request.method == "POST" and request.url.path in ("/api/clouds", "/api/conversions"):
                 # Authenticate and reject oversized requests before multipart parsing can spool a file.
                 with database.session() as session:
@@ -418,9 +428,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return FileResponse(settings.root / "web" / "login.html")
 
     @app.get("/viewer", include_in_schema=False)
-    def viewer(request: Request, cloud: str | None = None, session=Depends(get_session)):
+    def viewer(request: Request, cloud: str | None = None, project: uuid.UUID | None = None, session=Depends(get_session)):
         user = current_user(request, session, required=False)
-        if cloud:
+        if project:
+            user = current_user(request, session)
+            record = get_project(session, project, user)
+            project_cloud(session, record.cloud_id, user)
+        elif cloud:
             get_cloud(session, cloud, user)
         elif not user:
             return RedirectResponse("/login", status_code=303)
@@ -441,6 +455,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/index.html", include_in_schema=False)
     def old_entry():
         return RedirectResponse("/", status_code=303)
+
+    register_project_routes(app, settings, get_session)
 
     # Explicit mounts prevent serving SQLite, Python source, tools, or runtime files.
     for prefix, directory in (("assets", "web/assets"), ("libs", "libs"), ("build", "build"), ("resources", "resources")):

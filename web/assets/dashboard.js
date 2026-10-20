@@ -6,6 +6,7 @@ let sortColumn = "createdAt";
 let sortDirection = "descending";
 let clouds = [];
 let jobs = [];
+let projects = [];
 let selected = null;
 let timer;
 let toastTimer;
@@ -202,13 +203,44 @@ function renderJobs() {
   if (!jobs.length) byId("job_list").append(element("p", "muted", "Tutaj zobaczysz przebieg importu i przetwarzania chmur."));
 }
 
+function renderProjects() {
+  const container = byId("saved_project_list");
+  container.replaceChildren();
+  if (!projects.length) container.append(element("p", "muted", "Zapisz pierwszy projekt w panelu chmur we viewerze."));
+  for (const project of projects) {
+    const row = element("article", "job saved-project");
+    const description = element("div");
+    description.append(element("strong", "", project.name), element("small", "muted", `${project.cloudName} · ${new Date(project.updatedAt).toLocaleString("pl-PL")}`));
+    const actions = element("div", "row-actions");
+    if (project.cloudAvailable) {
+      const open = element("a", "", "Otwórz projekt ↗");
+      open.href = project.viewerUrl;
+      open.setAttribute("aria-label", `Otwórz projekt ${project.name}`);
+      actions.append(open);
+    } else actions.append(element("span", "muted", "Chmura niedostępna"));
+    const remove = element("button", "quiet", "Usuń zapis");
+    remove.type = "button";
+    remove.addEventListener("click", async () => {
+      if (!window.confirm(`Usunąć zapis projektu „${project.name}”?`)) return;
+      remove.disabled = true;
+      try { await api(`/api/projects/${project.id}`, {method: "DELETE"}); await refresh(); }
+      catch (error) { toast(error.message); remove.disabled = false; }
+    });
+    actions.append(remove);
+    row.append(description, actions);
+    container.append(row);
+  }
+}
+
 async function refresh() {
   clearTimeout(timer);
   try {
-    const [cloudData, jobData] = await Promise.all([api("/api/clouds"), api("/api/jobs")]);
+    const [cloudData, jobData, projectData] = await Promise.all([api("/api/clouds"), api("/api/jobs"), api("/api/projects")]);
     clouds = cloudData.clouds;
     jobs = jobData.jobs;
+    projects = projectData.projects;
     render();
+    renderProjects();
   } catch (error) {
     byId("load_status").textContent = error.message;
   } finally {

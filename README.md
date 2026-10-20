@@ -87,7 +87,7 @@ first. Sorting is preserved while searching, filtering, and polling for updates.
   processing, job logs, and original-file downloads still require ownership.
 
 The database is `data/app.sqlite3` by default. It contains `User`, `Cloud`,
-`ProcessingJob`, and login-session records. LAS/LAZ/PLY/PTS/PTX and Potree binaries stay
+`Project`, `ProcessingJob`, and login-session records. LAS/LAZ/PLY/PTS/PTX and Potree binaries stay
 outside the database. Only dedicated asset directories are served statically;
 database files, Python source, tools, and temporary uploads are not web assets.
 Converted data is served after authorization with HTTP Range support.
@@ -176,6 +176,9 @@ session cookie for subsequent calls.
 | `POST /api/clouds` | Multipart upload: `file`, `name`, optional `visibility` |
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
 | `GET /api/clouds/{id}/comparison` | Ready result and its immediate source; requires view access to both |
+| `GET /api/projects`, `POST /api/projects` | List the owner's saved viewer projects (optional `cloudId` filter), or create one with `name`, `cloudId`, and `sceneState` |
+| `GET /api/projects/{id}`, `PUT /api/projects/{id}` | Open or update a private project; updates require `name`, `sceneState`, and the current `revision` |
+| `DELETE /api/projects/{id}` | Delete a saved project while keeping the cloud and its files |
 | `PATCH /api/clouds/{id}` | Owner changes `name` and/or `visibility` |
 | `DELETE /api/clouds/{id}` | Owner permanently removes files and marks the retained cloud record deleted |
 | `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ/PLY/PTS/PTX as an attachment; supports HEAD and Range |
@@ -196,7 +199,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_projects.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
 npm.cmd run test:comparison
@@ -384,6 +387,49 @@ The output directory contains:
 
 Point clouds without an original LAS/LAZ or normalized working LAZ can still be
 viewed, but segmentation is disabled for them.
+
+## Saved viewer projects
+
+Open **Chmury i przetwarzanie → Projekty** in the viewer of an owned, ready cloud.
+Enter a project name and choose **Zapisz projekt**. The saved project appears in
+**Moje projekty** in the library and in that cloud's project selector. Choose
+**Otwórz projekt** to restore it, **Zapisz zmiany** to update it, or **Zapisz kopię**
+to keep a separate version. Multiple projects can refer to the same cloud.
+Projects also have stable links: `/viewer?project={id}`.
+
+A project saves the camera position, direction, orbit distance, field of view,
+and perspective/orthographic mode; display and clipping settings; active-cloud
+transform, point coloring, size, shape, opacity and classification visibility;
+return-number, source-ID and GPS-time filters;
+measurements, box/sphere volumes, profiles, and nested plain-text annotations.
+Opening replaces the current viewer tools and reuses the existing cloud cache.
+The interface asks before replacing unsaved changes. Save explicitly to persist
+work; changing the camera does not automatically overwrite a project.
+
+Projects belong to their creator and are available only on that account, even
+when their cloud is public. Creating and updating require an owned, ready cloud.
+Renaming a cloud keeps its project links working. Deleting a cloud retains its
+projects in the library as unavailable; deleting a project removes only its saved
+state. Source and converted point-cloud files are not copied into the project.
+
+Migration `0004` creates `projects` with UUID `id`, `owner_id`, `cloud_id`, `name`,
+JSON `scene_state`, UTC timestamps, and a positive integer `revision`. It runs
+automatically on startup, or through `python -m backend.migrate`. Back up the
+database before deployment as described above. Existing cloud and account data
+remain in their current tables.
+
+`POST /api/projects` accepts `name`, UUID `cloudId`, and `sceneState`. The scene
+uses `schemaVersion: 1` and a camera with `position`, `yaw`, `pitch`, and positive
+`radius`; other scene fields have documented defaults in `/docs`. Responses
+include `viewerUrl` and `revision`. `PUT /api/projects/{id}` requires `name`,
+`sceneState`, and the last read `revision`; a stale save returns HTTP 409 and
+leaves the newer state intact. Owner and cloud cannot be reassigned by an update.
+
+Scene validation rejects non-finite coordinates, unsupported object types and
+unknown fields, duplicate object IDs, and cyclic or deeper-than-16 annotation
+hierarchies. Scenes are limited to 2 MiB, 1,000 objects per tool collection and
+50,000 measurement/profile vertices in total. Viewer restoration uses fixed
+constructors and plain text; saved scenes cannot supply URLs or executable HTML.
 
 ## Comparing a result with its source
 

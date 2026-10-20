@@ -1,0 +1,11 @@
+#project_panel{margin-top:1rem;padding:1rem;border:1px solid #465565;border-radius:.55rem;background:#17212b}
+#project_panel[hidden]{display:none}
+#project_panel summary{font-weight:650;cursor:pointer;color:#eef4f8}
+#project_panel label{display:block;margin:.8rem 0 .4rem;font-size:12px;color:#c3ced9}
+#project_panel input,#project_panel select{box-sizing:border-box;width:100%;min-width:0;padding:.6rem;border:1px solid #465565;border-radius:.4rem;background:#101820;color:#eef4f8;font:inherit}
+.project-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.65rem}
+.project-actions button{flex:1}
+#project_panel .helper-text,#project_status{font-size:12px;line-height:1.5;margin:.65rem 0 0}
+#project_status{color:#b9d8ee;overflow-wrap:anywhere}
+#project_status[data-kind="error"]{color:#ff9ba5}
+#project_panel button:focus-visible,#project_panel summary:focus-visible{outline:2px solid #70b7ff;outline-offset:3px}

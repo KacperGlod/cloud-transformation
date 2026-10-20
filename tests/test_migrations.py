@@ -7,7 +7,7 @@ from sqlalchemy import MetaData, Table, inspect, select
 
 from backend.config import Settings
 from backend.database import Database
-from backend.models import Cloud, ProcessingJob, User, utcnow
+from backend.models import Cloud, ProcessingJob, Project, User, utcnow
 
 
 def test_soft_delete_migration_preserves_existing_clouds_and_jobs(tmp_path):
@@ -101,5 +101,52 @@ def test_processing_file_migration_preserves_originals_and_existing_schema(tmp_p
         with database.session() as session:
             cloud = session.get(Cloud, identifier)
             assert cloud.source_file == "original.ply" and cloud.processing_file is None
+    finally:
+        database.engine.dispose()
+
+
+def test_project_migration_preserves_clouds_and_matches_models(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", clouds_dir=tmp_path / "clouds",
+                        runtime_dir=tmp_path / "runtime", database_url="", start_worker=False)
+    settings.prepare()
+    database = Database(settings)
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "backend" / "migrations"))
+    try:
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "0003")
+        with database.session() as session:
+            user = User(email="project-migration@example.test", password_hash="unused")
+            session.add(user)
+            session.flush()
+            cloud = Cloud(owner_id=user.id, name="Istniejąca chmura", status="ready", storage_key="project-migration",
+                          source_file="original.laz", processing_file="working.laz")
+            session.add(cloud)
+            session.commit()
+            owner_id, cloud_id = user.id, cloud.id
+        database.migrate()
+        with database.session() as session:
+            project = Project(owner_id=owner_id, cloud_id=cloud_id, name="Zapis", scene_state={"schemaVersion": 1})
+            session.add(project)
+            session.commit()
+            identifier = project.id
+        database.migrate()
+        with database.session() as session:
+            assert session.get(Project, identifier).revision == 1
+            assert session.get(Project, identifier).scene_state == {"schemaVersion": 1}
+            assert session.get(Cloud, cloud_id).source_file == "original.laz"
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.check(config)
+            indexes = {index["name"] for index in inspect(connection).get_indexes("projects")}
+            assert indexes == {"ix_projects_cloud_id", "ix_project_owner_updated"}
+            assert {key["referred_table"] for key in inspect(connection).get_foreign_keys("projects")} == {"users", "clouds"}
+            command.downgrade(config, "0003")
+            assert "projects" not in inspect(connection).get_table_names()
+        database.migrate()
+        with database.session() as session:
+            assert session.get(Cloud, cloud_id).processing_file == "working.laz"
+            assert session.get(User, owner_id).email == "project-migration@example.test"
     finally:
         database.engine.dispose()

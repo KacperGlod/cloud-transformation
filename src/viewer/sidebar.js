@@ -1097,12 +1097,13 @@ export class Sidebar{
 				<li>
 					<label style="whitespace: nowrap; display: flex">
 						<input id="${inputID}" type="checkbox" ${checked}/>
-						<span style="flex-grow: 1">${name}</span>
+						<span style="flex-grow: 1"></span>
 						<input id="${colorPickerID}" style="zoom: 0.5" />
 					</label>
 				</li>
 			`);
 
+			element.find('span').text(name);
 			const elInput = element.find('input');
 			const elColorPicker = element.find(`#${colorPickerID}`);
 
