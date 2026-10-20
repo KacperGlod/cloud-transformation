@@ -71,6 +71,27 @@ function badge(status) {
   return element("span", `badge ${active(status) ? "active" : status === "completed" ? "ready" : status}`, statusLabel(status));
 }
 
+function cloudStatus(cloud) {
+  if (!active(cloud.status)) return badge(cloud.status);
+  const job = jobs.find(job => job.cloudId === cloud.id && active(job.status));
+  const value = job?.status === "uploading" ? job.uploadProgress : job?.progress;
+  const waiting = !job || ["queued", "processing", "cancelling"].includes(job.status);
+  const percent = !waiting && Number.isFinite(value) && value > 0 ? Math.min(100, Math.round(value)) : null;
+  const container = element("div", "cloud-status-progress");
+  const label = element("div", "cloud-status-label");
+  label.append(badge(cloud.status));
+  if (percent !== null) label.append(element("span", "cloud-progress-value", `${percent}%`));
+  const progress = element("progress");
+  progress.max = 100;
+  if (percent !== null) progress.value = percent;
+  const phase = statusLabel(job?.status || cloud.status);
+  progress.setAttribute("aria-label", `Postęp przetwarzania chmury ${cloud.name}`);
+  progress.setAttribute("aria-valuetext", percent === null ? phase : `${phase}: ${percent}%`);
+  progress.title = percent === null ? phase : `${phase}: ${percent}%`;
+  container.append(label, progress);
+  return container;
+}
+
 function renderSortHeaders() {
   for (const button of sortButtons) {
     const selected = button.dataset.sort === sortColumn;
@@ -107,7 +128,7 @@ function render() {
     title.append(icon, description);
     nameCell.append(title);
     const statusCell = element("td");
-    statusCell.append(badge(cloud.status));
+    statusCell.append(cloudStatus(cloud));
     if (cloud.error) statusCell.title = cloud.error;
     const visibility = element("td", "visibility", cloud.visibility === "public" ? "◉ Publiczna" : "◈ Prywatna");
     const date = new Date(cloud.createdAt).toLocaleString("pl-PL", {

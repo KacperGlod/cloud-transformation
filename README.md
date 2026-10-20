@@ -82,6 +82,11 @@ and natural numeric ordering, and statuses follow their displayed Polish labels.
 File sizes use bytes and dates use their full timestamps. The default is newest
 first. Sorting is preserved while searching, filtering, and polling for updates.
 
+Active clouds also show a progress bar in the library table's Status column,
+with the current job's percentage when available. Queued tasks and stages that
+have not reported progress show an indeterminate bar. It updates automatically
+and disappears when processing finishes, fails, or is cancelled.
+
 - `private` (default): metadata and files are accessible only to the owner.
 - `public`: anyone with the viewer URL can view the converted cloud. Editing,
   processing, job logs, and original-file downloads still require ownership.
