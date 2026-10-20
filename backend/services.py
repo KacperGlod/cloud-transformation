@@ -6,11 +6,10 @@ from sqlalchemy import select
 
 from .config import Settings
 from .formats import NORMALIZED_EXTENSIONS
+from .job_states import ACTIVE_STATUSES
+from .jobs import job_actions
 from .models import Cloud, ProcessingJob, User, iso_utc, utcnow
 from .storage import child_path, download_filename, find_source, read_info, remove_directory, validate_potree
-
-
-ACTIVE_STATUSES = ("uploading", "queued", "processing", "normalizing", "converting", "segmenting", "transforming", "removing")
 
 
 def get_cloud(session, identifier: str, user: User | None, *, write=False) -> Cloud:
@@ -69,7 +68,7 @@ def cloud_json(cloud: Cloud, user: User | None, settings: Settings) -> dict:
     }
 
 
-def job_json(job: ProcessingJob, cloud: Cloud) -> dict:
+def job_json(job: ProcessingJob, cloud: Cloud, session, settings: Settings) -> dict:
     params = job.parameters or {}
     return {
         "id": str(job.id), "cloudId": str(cloud.id), "kind": job.kind,
@@ -85,6 +84,7 @@ def job_json(job: ProcessingJob, cloud: Cloud) -> dict:
         "removalResult": job.result if job.kind == "point-removal" else None,
         "error": job.error, "log": job.log, "createdAt": iso_utc(job.created_at),
         "updatedAt": iso_utc(job.updated_at),
+        **job_actions(session, settings, job, cloud),
     }
 
 

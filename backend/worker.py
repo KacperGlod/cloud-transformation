@@ -15,12 +15,19 @@ from sqlalchemy import select, update
 from .config import Settings
 from .database import Database
 from .formats import NORMALIZED_EXTENSIONS
+from .job_files import clean_work, restore_input, work_input_path
+from .job_states import RUNNING_STATUSES
+from .jobs import finish_cancelled
 from .models import Cloud, ProcessingJob, iso_utc, utcnow
 from .ply import ply_pipeline
-from .storage import child_path, ensure_conversion_space, remove_directory, validate_potree
+from .storage import child_path, ensure_conversion_space, validate_potree
 
 
 class WorkerStopped(Exception):
+    pass
+
+
+class JobCancelled(Exception):
     pass
 
 
@@ -48,48 +55,74 @@ class Worker:
 
     def update_job(self, identifier, **values):
         with self.database.session() as session:
-            session.execute(update(ProcessingJob).where(ProcessingJob.id == identifier).values(**values, updated_at=utcnow()))
+            states = RUNNING_STATUSES if "status" in values else (*RUNNING_STATUSES, "cancelling")
+            changed = session.execute(update(ProcessingJob).where(
+                ProcessingJob.id == identifier, ProcessingJob.status.in_(states)
+            ).values(**values, updated_at=utcnow()))
             session.commit()
+            if "status" in values and changed.rowcount != 1:
+                raise JobCancelled()
+
+    def check_interruption(self, job_id):
+        with self.database.session() as session:
+            status = session.scalar(select(ProcessingJob.status).where(ProcessingJob.id == job_id))
+        if status == "cancelling":
+            raise JobCancelled()
+        if self.stopped():
+            raise WorkerStopped()
 
     def recover(self):
         with self.database.session() as session:
-            jobs = list(session.scalars(select(ProcessingJob).where(
-                ProcessingJob.status.in_(("processing", "normalizing", "converting", "segmenting", "transforming", "removing")))))
-            for job in jobs:
-                cloud = session.get(Cloud, job.cloud_id)
-                if not cloud or cloud.deleted_at is not None or cloud.status in ("deleting", "deleted"):
-                    continue
-                self.restore_input(job, cloud)
-                job.status = "queued"
-                job.progress = 0
-                job.log = (job.log + "\nWznowiono zadanie po restarcie workera.\n")[-60000:]
-                cloud.status = "queued"
-            session.commit()
+            identifiers = list(session.scalars(select(ProcessingJob.id).where(
+                ProcessingJob.status.in_((*RUNNING_STATUSES, "cancelling")))))
+        for identifier in identifiers:
+            self.finish_attempt(identifier, "queued", recovery=True)
 
     def work_input_path(self, job: ProcessingJob, cloud: Cloud) -> Path:
-        # PotreeConverter on Windows needs an ASCII basename for generated inputs.
-        filename = cloud.source_file if job.kind == "import" else "result.laz"
-        return child_path(self.settings.runtime_dir, str(job.id), filename)
+        return work_input_path(self.settings, job, cloud)
 
     def restore_input(self, job, cloud):
-        work = child_path(self.settings.runtime_dir, str(job.id))
-        output = child_path(self.settings.clouds_dir, cloud.storage_key)
-        files = {cloud.source_file: self.work_input_path(job, cloud)}
-        if cloud.processing_file:
-            files[cloud.processing_file] = child_path(work, cloud.processing_file)
-        for filename, target in files.items():
-            preserved = child_path(output, filename)
-            if not target.exists() and preserved.is_file():
-                work.mkdir(parents=True, exist_ok=True)
-                preserved.rename(target)
-        remove_directory(self.settings.clouds_dir, cloud.storage_key)
+        restore_input(self.settings, job, cloud)
+
+    def finish_attempt(self, job_id, status, *, error=None, result=None, recovery=False):
+        # Terminal states are published only after cleanup, serialized with retry/deletion.
+        with FileLock(str(self.settings.data_dir / "cloud-mutations.lock"), timeout=30):
+            with self.database.session() as session:
+                job = session.get(ProcessingJob, job_id)
+                cloud = session.get(Cloud, job.cloud_id) if job else None
+                if (not cloud or cloud.deleted_at is not None or cloud.status in ("deleting", "deleted")
+                        or job.status not in (*RUNNING_STATUSES, "cancelling")):
+                    return
+                try:
+                    if job.status == "cancelling":
+                        finish_cancelled(session, self.settings, job, cloud)
+                        return
+                    self.restore_input(job, cloud)
+                    if status != "queued":
+                        clean_work(self.settings, job, cloud, keep_import=True)
+                except OSError as problem:
+                    status = "failed"
+                    error = f"{error or 'Przerwano zadanie'}. Nie udało się posprzątać plików: {problem}"
+                job.status, job.error, job.result = status, error, result
+                cloud.status, cloud.error, cloud.entry_file = status, error, None
+                if status == "queued":
+                    job.progress = 0
+                    if recovery:
+                        job.log = (job.log + "\nWznowiono zadanie po restarcie workera.\n")[-60000:]
+                session.commit()
+
+    def finish_pending_cancellations(self):
+        with self.database.session() as session:
+            identifiers = list(session.scalars(select(ProcessingJob.id).where(ProcessingJob.status == "cancelling")))
+        for identifier in identifiers:
+            self.finish_attempt(identifier, "cancelled")
 
     def claim_next(self):
         with self.database.session() as session:
             job = session.scalar(select(ProcessingJob).join(Cloud, ProcessingJob.cloud_id == Cloud.id)
                                  .where(ProcessingJob.status == "queued", Cloud.deleted_at.is_(None),
                                         Cloud.status.not_in(("deleting", "deleted")))
-                                 .order_by(ProcessingJob.created_at, ProcessingJob.id).limit(1))
+                                 .order_by(ProcessingJob.updated_at, ProcessingJob.id).limit(1))
             if not job:
                 return None
             claimed = session.execute(update(ProcessingJob).where(
@@ -133,15 +166,18 @@ class Worker:
         }
         try:
             with log_path.open("wb") as log_stream:
+                stream_closed = False
                 while True:
-                    if self.stopped():
-                        raise WorkerStopped()
+                    self.check_interruption(job_id)
+                    if stream_closed and process.poll() is not None:
+                        break
                     try:
                         block = output_queue.get(timeout=0.25)
                     except queue.Empty:
                         continue
                     if block is None:
-                        break
+                        stream_closed = True
+                        continue
                     log_stream.write(block)
                     text = block.decode("utf-8", errors="replace")
                     complete_output = (complete_output + text)[-200000:]
@@ -153,6 +189,7 @@ class Worker:
                         self.update_job(job_id, log=saved_log, progress=progress)
                         last_save = time.monotonic()
             code = process.wait()
+            self.check_interruption(job_id)
             self.update_job(job_id, log=saved_log, progress=progress)
             if code:
                 details = complete_output.strip().splitlines()
@@ -169,6 +206,7 @@ class Worker:
                     process.wait()
             reader.join(timeout=2)
             process.stdout.close()
+            self.update_job(job_id, log=saved_log, progress=progress)
 
     def process(self, job_id):
         with self.database.session() as session:
@@ -178,6 +216,8 @@ class Worker:
             cloud = session.get(Cloud, job.cloud_id)
             if not cloud or cloud.deleted_at is not None or cloud.status in ("deleting", "deleted"):
                 return
+            if job.status not in (*RUNNING_STATUSES, "cancelling"):
+                return
             source = session.get(Cloud, job.source_cloud_id) if job.source_cloud_id else None
         work = child_path(self.settings.runtime_dir, str(job.id))
         output = child_path(self.settings.clouds_dir, cloud.storage_key)
@@ -185,8 +225,10 @@ class Worker:
         work.mkdir(parents=True, exist_ok=True)
         params = job.parameters
         result = None
-        interrupted = False
         try:
+            self.check_interruption(job_id)
+            if job.kind != "import" and source is None:
+                raise ValueError("Nie znaleziono chmury źródłowej.")
             if source:
                 if not source.processing_filename or source.status != "ready":
                     raise ValueError("Chmura źródłowa nie jest gotowa do przetwarzania.")
@@ -234,10 +276,12 @@ class Worker:
                 self.run_command(job_id, [self.settings.pdal, "pipeline", pipeline_file, "--stream"],
                                  work / "ply-import.log", "converting")
             ensure_conversion_space(input_path, self.settings.clouds_dir)
+            self.check_interruption(job_id)
             output.mkdir(exist_ok=False)
             self.run_command(job_id, [self.settings.converter, input_path, "-o", output, "-m", "poisson"],
                              output / "conversion.log", "converting")
-            validate_potree(output)
+            validate_potree(output, check_cancelled=lambda: self.check_interruption(job_id))
+            self.check_interruption(job_id)
             for log_path in work.glob("*.log"):
                 log_path.rename(output / log_path.name)
             size = original_path.stat().st_size
@@ -248,7 +292,8 @@ class Worker:
                 result["outputFile"] = cloud.source_file
             operation = {"type": job.kind, **params, "result": result}
             # Fetch metadata again: renaming / visibility changes may have occurred while processing.
-            with self.database.session() as session:
+            with FileLock(str(self.settings.data_dir / "cloud-mutations.lock"), timeout=30), self.database.session() as session:
+                self.check_interruption(job_id)
                 current = session.get(Cloud, cloud.id)
                 info = {"schemaVersion": 2, "id": str(current.id), "name": current.name,
                     "visibility": current.visibility, "slug": current.storage_key, "sourceFile": current.source_file,
@@ -266,38 +311,23 @@ class Worker:
                 current_job.progress = 100
                 current_job.result = result
                 current_job.error = None
+                clean_work(self.settings, job, cloud, keep_import=False)
                 session.commit()
+        except JobCancelled:
+            self.finish_attempt(job_id, "cancelled")
         except (WorkerStopped, KeyboardInterrupt):
-            interrupted = True
             self.shutdown_requested = True
-            self.restore_input(job, cloud)
-            with self.database.session() as session:
-                current_job = session.get(ProcessingJob, job_id)
-                current_job.status = "queued"
-                current_job.progress = 0
-                session.get(Cloud, cloud.id).status = "queued"
-                session.commit()
+            self.finish_attempt(job_id, "queued")
         except Exception as problem:
             # Preserve a source moved just before a failed commit, so it is not lost.
-            self.restore_input(job, cloud)
-            with self.database.session() as session:
-                current_job = session.get(ProcessingJob, job_id)
-                current_job.status = "failed"
-                current_job.error = str(problem)
-                current_job.result = result
-                current_cloud = session.get(Cloud, cloud.id)
-                current_cloud.status = "failed"
-                current_cloud.error = str(problem)
-                session.commit()
-        finally:
-            if not interrupted:
-                remove_directory(self.settings.runtime_dir, str(job.id))
+            self.finish_attempt(job_id, "failed", error=str(problem), result=result)
 
     def run(self):
         try:
             with FileLock(str(self.settings.runtime_dir / "worker.lock"), timeout=0):
                 self.recover()
                 while not self.stopped():
+                    self.finish_pending_cancellations()
                     identifier = self.claim_next()
                     if identifier:
                         self.process(identifier)

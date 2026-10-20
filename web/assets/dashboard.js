@@ -1,5 +1,6 @@
 import {api, json, sizeLabel, active, statusLabel, element} from "./common.js";
 import {sortClouds} from "./cloud-sorting.js";
+import {createJobControls} from "./job-controls.js";
 const byId = id => document.getElementById(id);
 const sortButtons = document.querySelectorAll(".sort-button");
 let sortColumn = "createdAt";
@@ -182,8 +183,12 @@ function renderJobs() {
   const expanded = new Set([...byId("job_list").querySelectorAll("details[open]")].map(node => node.dataset.id));
   byId("job_list").replaceChildren();
   const names = {import: "Import", segmentation: "Segmentacja", transformation: "Transformacja", "point-removal": "Usuwanie punktów"};
-  for (const job of jobs.slice(0, 8)) {
-    const details = element("details", "job");
+  const visibleJobs = [...jobs.filter(job => active(job.status)), ...jobs.filter(job => !active(job.status)).slice(0, 8)];
+  for (const job of visibleJobs) {
+    const row = element("article", "job");
+    const controls = createJobControls({onChange: refresh, onError: error => toast(error.message)});
+    controls.update(job);
+    const details = element("details", "job-details");
     details.dataset.id = job.id;
     details.open = expanded.has(job.id);
     const summary = element("summary");
@@ -198,7 +203,8 @@ function renderJobs() {
     details.append(summary);
     if (job.error) details.append(element("p", "error", job.error));
     details.append(element("pre", "", job.log || "Zadanie oczekuje na rozpoczęcie."));
-    byId("job_list").append(details);
+    row.append(controls.container, details);
+    byId("job_list").append(row);
   }
   if (!jobs.length) byId("job_list").append(element("p", "muted", "Tutaj zobaczysz przebieg importu i przetwarzania chmur."));
 }

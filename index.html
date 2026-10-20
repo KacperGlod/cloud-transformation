@@ -14,6 +14,7 @@
 	<link rel="stylesheet" href="./libs/spectrum/spectrum.css">
 	<link rel="stylesheet" href="./libs/jstree/themes/mixed/style.css">
 	<link rel="stylesheet" href="/assets/viewer-projects.css">
+	<link rel="stylesheet" href="/assets/job-controls.css">
 
 	<style>
 		:root {
@@ -831,6 +832,7 @@
 		import {getFlightOrbitRadius, resumeAfterFlight} from "/assets/flight-navigation.js";
 		import {createProjectPanel} from "/assets/viewer-projects.js";
 		import {api} from "/assets/common.js";
+		import {createJobControls, checkJobCancellation} from "/assets/job-controls.js";
 
 		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
 		const requestedProjectId = new URLSearchParams(window.location.search).get("project");
@@ -885,6 +887,14 @@
 		const pointRemovalStatus = document.getElementById("point_removal_status");
 		const pointRemovalLog = document.getElementById("point_removal_log");
 		const pointRemovalLogDetails = document.getElementById("point_removal_log_details");
+		const importJobControls = createJobControls({onRetry: runImport, onError: error => setImportStatus(error.message, "error")});
+		const segmentJobControls = createJobControls({onRetry: runSegmentation, onError: error => setSegmentStatus(error.message, "error")});
+		const transformJobControls = createJobControls({onRetry: runTransformation, onError: error => setTransformStatus(error.message, "error")});
+		const removalJobControls = createJobControls({onRetry: runPointRemoval, onError: error => setPointRemovalStatus(error.message, "error")});
+		importStatus.after(importJobControls.container);
+		segmentStatus.after(segmentJobControls.container);
+		transformStatus.after(transformJobControls.container);
+		pointRemovalStatus.after(removalJobControls.container);
 		const pointRemovalHint = document.getElementById("point_removal_hint");
 		const renderArea = document.getElementById("potree_render_area");
 		const comparisonLink = createComparisonLink(importPanel, () => activeCloud);
@@ -1464,8 +1474,12 @@
 				const job = await response.json();
 				importLog.textContent = job.log || "";
 				logDetails.hidden = !job.log;
+				importJobControls.update(job);
 
-				if (job.status === "queued") {
+				if (checkJobCancellation(job)) {
+					importProgress.removeAttribute("value");
+					setImportStatus("Zatrzymywanie operacji…");
+				} else if (job.status === "queued") {
 					importProgress.removeAttribute("value");
 					setImportStatus("Plik oczekuje w kolejce do konwersji…");
 				} else if (job.status === "normalizing") {
@@ -1559,8 +1573,12 @@
 				const job = await response.json();
 				segmentLog.textContent = job.log || "";
 				segmentLogDetails.hidden = !job.log;
+				segmentJobControls.update(job);
 
-				if (job.status === "queued") {
+				if (checkJobCancellation(job)) {
+					segmentProgress.removeAttribute("value");
+					setSegmentStatus("Zatrzymywanie operacji…");
+				} else if (job.status === "queued") {
 					segmentProgress.removeAttribute("value");
 					setSegmentStatus("Zadanie oczekuje w lokalnej kolejce…");
 				} else if (job.status === "segmenting") {
@@ -1646,8 +1664,12 @@
 				const job = await response.json();
 				transformLog.textContent = job.log || "";
 				transformLogDetails.hidden = !job.log;
+				transformJobControls.update(job);
 
-				if (job.status === "queued") {
+				if (checkJobCancellation(job)) {
+					transformProgress.removeAttribute("value");
+					setTransformStatus("Zatrzymywanie operacji…");
+				} else if (job.status === "queued") {
 					transformProgress.removeAttribute("value");
 					setTransformStatus("Zadanie oczekuje w lokalnej kolejce…");
 				} else if (job.status === "transforming") {
@@ -1716,8 +1738,12 @@
 				const job = await response.json();
 				pointRemovalLog.textContent = job.log || "";
 				pointRemovalLogDetails.hidden = !job.log;
+				removalJobControls.update(job);
 
-				if (job.status === "queued") {
+				if (checkJobCancellation(job)) {
+					pointRemovalProgress.removeAttribute("value");
+					setPointRemovalStatus("Zatrzymywanie operacji…");
+				} else if (job.status === "queued") {
 					pointRemovalProgress.removeAttribute("value");
 					setPointRemovalStatus("Zadanie oczekuje w lokalnej kolejce…");
 				} else if (job.status === "removing") {
@@ -1848,10 +1874,14 @@
 
 		importForm.addEventListener("submit", async event => {
 			event.preventDefault();
+			await runImport();
+		});
+
+		async function runImport(queuedJob = null) {
 			const file = cloudFile.files[0];
 			const name = cloudName.value.trim();
 
-			if (!file || !name) {
+			if (!queuedJob && (!file || !name)) {
 				setImportStatus("Wybierz plik i podaj nazwę chmury.", "error");
 				return;
 			}
@@ -1863,9 +1893,10 @@
 			importLog.textContent = "";
 			logDetails.hidden = true;
 			setImportStatus("Rozpoczynanie uploadu…");
+			importJobControls.update(queuedJob);
 
 			try {
-				const uploadedJob = await uploadCloud(file, name);
+				const uploadedJob = queuedJob || await uploadCloud(file, name);
 				const completedJob = await waitForConversion(uploadedJob.id);
 				await refreshCloudList();
 				cloudList.value = completedJob.pointCloudUrl;
@@ -1875,18 +1906,22 @@
 				cloudName.value = "";
 			} catch (error) {
 				importProgress.value = 0;
-				setImportStatus(error.message, "error");
+				setImportStatus(error.message, error.cancelled ? "info" : "error");
 			} finally {
 				convertButton.disabled = false;
 				cloudFile.disabled = false;
 				cloudName.disabled = false;
 			}
-		});
+		}
 
 		segmentForm.addEventListener("submit", async event => {
 			event.preventDefault();
+			await runSegmentation();
+		});
+
+		async function runSegmentation(queuedJob = null) {
 			const name = segmentName.value.trim();
-			if (!name) {
+			if (!queuedJob && !name) {
 				setSegmentStatus("Podaj nazwę wynikowej chmury.", "error");
 				return;
 			}
@@ -1900,11 +1935,11 @@
 			segmentLog.textContent = "";
 			segmentLogDetails.hidden = true;
 			setSegmentStatus("Przygotowywanie lokalnej segmentacji…");
+			segmentJobControls.update(queuedJob);
 
 			try {
-				const payload = buildSegmentationPayload(name, segmentMode.value);
-				const queuedJob = await createSegmentation(payload);
-				const completedJob = await waitForSegmentation(queuedJob.id);
+				const job = queuedJob || await createSegmentation(buildSegmentationPayload(name, segmentMode.value));
+				const completedJob = await waitForSegmentation(job.id);
 				await refreshCloudList();
 				cloudList.value = completedJob.pointCloudUrl;
 				await loadPointCloud(completedJob.pointCloudUrl, completedJob.name);
@@ -1915,35 +1950,39 @@
 				segmentName.value = "";
 			} catch (error) {
 				segmentProgress.value = 0;
-				setSegmentStatus(error.message, "error");
+				setSegmentStatus(error.message, error.cancelled ? "info" : "error");
 			} finally {
 				clipBoxAdd.disabled = false;
 				segmentMode.disabled = false;
 				segmentName.disabled = false;
 				refreshClippingBoxes();
 			}
-		});
+		}
 
 		pointRemovalForm.addEventListener("submit", async event => {
 			event.preventDefault();
+			await runPointRemoval();
+		});
+
+		async function runPointRemoval(queuedJob = null) {
 			const name = pointRemovalName.value.trim();
-			if (!name) {
+			if (!queuedJob && !name) {
 				setPointRemovalStatus("Podaj nazwę wynikowej chmury.", "error");
 				return;
 			}
 
 			setPointRemovalPicking(false);
-			const controls = [...pointRemovalForm.querySelectorAll("input, button")];
+			const controls = [...pointRemovalForm.querySelectorAll("input, button:not(.job-action-button)")];
 			controls.forEach(control => { control.disabled = true; });
 			pointRemovalProgress.value = 0;
 			pointRemovalLog.textContent = "";
 			pointRemovalLogDetails.hidden = true;
 			setPointRemovalStatus("Przygotowywanie lokalnego usuwania punktów…");
+			removalJobControls.update(queuedJob);
 
 			try {
-				const payload = buildPointRemovalPayload(name);
-				const queuedJob = await createPointRemoval(payload);
-				const completedJob = await waitForPointRemoval(queuedJob.id);
+				const job = queuedJob || await createPointRemoval(buildPointRemovalPayload(name));
+				const completedJob = await waitForPointRemoval(job.id);
 				const removedPoints = completedJob.removalResult?.removedPoints;
 				await refreshCloudList();
 				cloudList.value = completedJob.pointCloudUrl;
@@ -1954,32 +1993,36 @@
 					: `Gotowe. Usunięto ${removedPoints.toLocaleString("pl-PL")} punktów.`);
 			} catch (error) {
 				pointRemovalProgress.value = 0;
-				setPointRemovalStatus(error.message, "error");
+				setPointRemovalStatus(error.message, error.cancelled ? "info" : "error");
 			} finally {
 				controls.forEach(control => { control.disabled = false; });
 				updatePointRemovalControls();
 			}
-		});
+		}
 
 		transformForm.addEventListener("submit", async event => {
 			event.preventDefault();
+			await runTransformation();
+		});
+
+		async function runTransformation(queuedJob = null) {
 			const name = transformName.value.trim();
-			if (!name) {
+			if (!queuedJob && !name) {
 				setTransformStatus("Podaj nazwę wynikowej chmury.", "error");
 				return;
 			}
 
-			const controls = [...transformForm.querySelectorAll("input, select, button")];
+			const controls = [...transformForm.querySelectorAll("input, select, button:not(.job-action-button)")];
 			controls.forEach(control => { control.disabled = true; });
 			transformProgress.value = 0;
 			transformLog.textContent = "";
 			transformLogDetails.hidden = true;
 			setTransformStatus("Przygotowywanie lokalnej transformacji…");
+			transformJobControls.update(queuedJob);
 
 			try {
-				const payload = buildTransformationPayload(name);
-				const queuedJob = await createTransformation(payload);
-				const completedJob = await waitForTransformation(queuedJob.id);
+				const job = queuedJob || await createTransformation(buildTransformationPayload(name));
+				const completedJob = await waitForTransformation(job.id);
 				await refreshCloudList();
 				cloudList.value = completedJob.pointCloudUrl;
 				await loadPointCloud(completedJob.pointCloudUrl, completedJob.name);
@@ -1991,13 +2034,13 @@
 					: `Gotowe. Przeliczono ${outputPoints.toLocaleString("pl-PL")} punktów.`);
 			} catch (error) {
 				transformProgress.value = 0;
-				setTransformStatus(error.message, "error");
+				setTransformStatus(error.message, error.cancelled ? "info" : "error");
 			} finally {
 				controls.forEach(control => { control.disabled = false; });
 				updatePivotControls();
 				transformButton.disabled = !transformationEngineAvailable || !activeCloud?.processingAvailable;
 			}
-		});
+		}
 
 		async function initialize() {
 			try {

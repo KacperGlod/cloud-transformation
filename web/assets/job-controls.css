@@ -1,0 +1,7 @@
+.job-controls:empty{display:none}
+.job-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:.6rem 0 0}
+.job-controls button{font:inherit;font-size:12px;min-height:34px;cursor:pointer}
+.job-controls button:disabled{cursor:default;opacity:.55}
+.job-controls button:focus-visible{outline:2px solid #70b7ff;outline-offset:3px}
+.job-action-hint{flex-basis:100%;margin:0;color:#b4c3cd;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.job .job-controls{margin:0 0 .6rem}

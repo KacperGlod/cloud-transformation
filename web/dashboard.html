@@ -6,6 +6,7 @@
   <title>Biblioteka chmur · CloudPoint</title>
   <link rel="icon" type="image/svg+xml" sizes="any" href="/assets/favicon.svg">
   <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/job-controls.css">
   <script type="module" src="/assets/dashboard.js"></script>
 </head>
 <body>
@@ -22,7 +23,7 @@
       <article><span>Pliki źródłowe</span><strong id="storage_size">—</strong><small>LAS · LAZ · PLY · PTS · PTX</small></article>
     </div>
     <section class="library" aria-labelledby="library_title">
-      <div class="library-toolbar"><h2 id="library_title">Moje chmury <span id="list_count" class="counter">0</span></h2><div class="filters"><input id="search" type="search" placeholder="Szukaj po nazwie…" aria-label="Szukaj chmury po nazwie"><select id="status_filter" aria-label="Filtruj według statusu"><option value="all">Wszystkie statusy</option><option value="ready">Gotowe</option><option value="active">W przetwarzaniu</option><option value="failed">Błędy</option></select></div></div>
+      <div class="library-toolbar"><h2 id="library_title">Moje chmury <span id="list_count" class="counter">0</span></h2><div class="filters"><input id="search" type="search" placeholder="Szukaj po nazwie…" aria-label="Szukaj chmury po nazwie"><select id="status_filter" aria-label="Filtruj według statusu"><option value="all">Wszystkie statusy</option><option value="ready">Gotowe</option><option value="active">W przetwarzaniu</option><option value="failed">Błędy</option><option value="cancelled">Anulowane</option></select></div></div>
       <div class="table-scroll"><table><thead><tr>
         <th class="sortable" scope="col"><button type="button" class="sort-button" data-sort="name"><span class="sort-label">NAZWA CHMURY</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>
         <th class="sortable" scope="col"><button type="button" class="sort-button" data-sort="status"><span class="sort-label">STATUS</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>

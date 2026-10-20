@@ -251,4 +251,7 @@ def test_worker_reports_late_scan_errors_and_cleans_partial_output(application, 
     job = client.get(f"/api/jobs/{payload['id']}").json()
     assert job["status"] == "failed" and "wiersz" in job["error"]
     assert not (settings.clouds_dir / payload["cloudId"]).exists()
-    assert not (settings.runtime_dir / payload["id"]).exists()
+    work = settings.runtime_dir / payload["id"]
+    assert [entry.name for entry in work.iterdir()] == ["bad" + extension]
+    assert (work / ("bad" + extension)).read_bytes() == content
+    assert job["canRetry"]

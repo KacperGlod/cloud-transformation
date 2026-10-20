@@ -95,6 +95,9 @@ class JobRead(BaseModel):
     visibility: Visibility
     uploadProgress: int | None
     progress: int
+    canCancel: bool
+    canRetry: bool
+    retryUnavailableReason: str | None
     pointCloudUrl: str | None
     sourceCloud: str | None
     mode: str | None

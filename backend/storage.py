@@ -56,7 +56,7 @@ def find_source(directory: Path, info: dict) -> str | None:
     return None
 
 
-def validate_potree(directory: Path):
+def validate_potree(directory: Path, *, check_cancelled=None):
     metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
     if metadata.get("version") != "2.0":
         raise ValueError("Nieobsługiwana wersja danych Potree.")
@@ -71,6 +71,8 @@ def validate_potree(directory: Path):
         raise ValueError("Nieprawidłowy pierwszy fragment hierarchii Potree.")
     with hierarchy.open("rb") as stream:
         while block := stream.read(22 * 8192):
+            if check_cancelled:
+                check_cancelled()
             for node_type, _mask, _points, offset, size in struct.iter_unpack("<BBIqq", block):
                 if offset < 0 or size < 0 or node_type not in (0, 1, 2):
                     raise ValueError("Hierarchia Potree zawiera nieprawidłowy zakres danych.")

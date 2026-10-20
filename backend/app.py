@@ -19,6 +19,7 @@ from .config import Settings
 from .database import Database
 from .formats import MAX_HEADER_BYTES, NORMALIZED_EXTENSIONS, SOURCE_EXTENSIONS, validate_source_header
 from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
+from .jobs import cancel_job, get_job, retry_job
 from .schemas import AccountRead, CloudList, CloudName, CloudRead, CloudUpdate, ComparisonRead, Credentials, JobList, JobRead, PasswordChange, PointRemoval, Segmentation, Transformation, Visibility
 from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, get_comparison, import_legacy, job_json
 from .storage import child_path, download_filename, remove_directory
@@ -299,7 +300,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cloud.status, cloud.size_bytes = "queued", received
             job.status, job.upload_progress = "queued", 100
             session.commit()
-            return job_json(job, cloud)
+            return job_json(job, cloud, session, settings)
         except BaseException as problem:
             session.rollback()
             cloud.status, cloud.error = "failed", str(getattr(problem, "detail", problem))
@@ -346,7 +347,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         parameters = body.model_dump(mode="json", exclude={"name", "sourceCloud", "visibility"})
         cloud, job = create_job(session, user, body.name, body.visibility.value, download_filename(body.name, "result.laz"),
                                 kind=kind, source=source, parameters=parameters)
-        return job_json(job, cloud)
+        return job_json(job, cloud, session, settings)
 
     @app.post("/api/segmentations", status_code=202, response_model=JobRead)
     def segment(body: Segmentation, request: Request, session=Depends(get_session)):
@@ -364,17 +365,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def jobs(request: Request, session=Depends(get_session)):
         user = current_user(request, session)
         records = session.scalars(select(ProcessingJob).where(ProcessingJob.owner_id == user.id)
-                                 .order_by(ProcessingJob.created_at.desc()).limit(100))
-        return {"jobs": [job_json(job, session.get(Cloud, job.cloud_id)) for job in records]}
+                                 .order_by(ProcessingJob.updated_at.desc(), ProcessingJob.id).limit(100))
+        return {"jobs": [job_json(job, session.get(Cloud, job.cloud_id), session, settings) for job in records]}
 
     @app.get("/api/jobs/{identifier}", response_model=JobRead)
     @app.get("/api/conversions/{identifier}", include_in_schema=False)
     def job_detail(identifier: uuid.UUID, request: Request, session=Depends(get_session)):
         user = current_user(request, session)
-        job = session.get(ProcessingJob, identifier)
-        if not job or job.owner_id != user.id:
-            raise HTTPException(404, "Nie znaleziono zadania.")
-        return job_json(job, session.get(Cloud, job.cloud_id))
+        job = get_job(session, identifier, user)
+        return job_json(job, session.get(Cloud, job.cloud_id), session, settings)
+
+    @app.post("/api/jobs/{identifier}/cancel", response_model=JobRead)
+    def cancel_processing_job(identifier: uuid.UUID, request: Request, session=Depends(get_session)):
+        with FileLock(str(settings.data_dir / "cloud-mutations.lock"), timeout=30):
+            user = current_user(request, session)
+            job = get_job(session, identifier, user)
+            cloud = session.get(Cloud, job.cloud_id)
+            try:
+                cancel_job(session, settings, job, cloud)
+            except OSError as problem:
+                session.rollback()
+                raise HTTPException(409, f"Zlecono anulowanie, ale sprzątanie plików wymaga ponowienia przez workera: {problem}") from problem
+            return job_json(job, cloud, session, settings)
+
+    @app.post("/api/jobs/{identifier}/retry", status_code=202, response_model=JobRead)
+    def retry_processing_job(identifier: uuid.UUID, request: Request, session=Depends(get_session)):
+        with FileLock(str(settings.data_dir / "cloud-mutations.lock"), timeout=30):
+            user = current_user(request, session)
+            job = get_job(session, identifier, user)
+            cloud = session.get(Cloud, job.cloud_id)
+            try:
+                retry_job(session, settings, job, cloud)
+            except OSError as problem:
+                session.rollback()
+                raise HTTPException(409, f"Nie udało się przygotować plików do ponowienia: {problem}") from problem
+            return job_json(job, cloud, session, settings)
 
     def serve_cloud_file(cloud, asset_path, user, *, download=False):
         if cloud.status != "ready":

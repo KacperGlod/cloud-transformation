@@ -124,6 +124,26 @@ survive restarts. Interrupted processing restarts from its saved input; a
 partial upload is marked failed and must be uploaded again. Deletion is refused
 while the cloud is being processed or used as another job's source.
 
+Use **Usuń z kolejki** on a queued job or **Zatrzymaj operację** on a running
+job, in the library's task list or the viewer's operation panel. Queued jobs
+are cancelled immediately. Running jobs enter `cancelling`; the worker stops
+the process it launched, removes incomplete output, and records `cancelled`.
+The source cloud is preserved. Pending cancellation survives a worker restart
+and is finished instead of requeuing the job. A cancellation that arrives after
+successful completion returns 409 and keeps the completed result.
+
+**Ponów po błędzie** (or **Uruchom ponownie** after cancellation) restarts the
+same job from the beginning, with its saved parameters, cloud ID and job ID.
+It goes to the end of the queue, clears the last error/progress/result, and
+appends the previous error and retry timestamp to the retained log. Derived
+operations require an accessible, ready source. A complete uploaded original
+is retained privately in the job's runtime directory after failure/cancellation;
+generated working files and partial Potree output are discarded. Successful
+completion or explicit cloud deletion removes that runtime directory. Include
+these retained uploads in backups. Incomplete uploads, or older failed imports
+whose input was already removed, require uploading again; the UI explains why
+retry is unavailable. No database schema migration is needed for these states.
+
 To run the API and worker in separate terminals:
 
 ```powershell
@@ -184,6 +204,8 @@ session cookie for subsequent calls.
 | `GET /api/clouds/{id}/download` | Owner downloads the preserved LAS/LAZ/PLY/PTS/PTX as an attachment; supports HEAD and Range |
 | `GET /api/clouds/{id}/files/{path}` | Authorized files, including Range requests |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | Owner's persistent job states and logs |
+| `POST /api/jobs/{id}/cancel` | Owner cancels a queued job or requests running-job cancellation; returns the current job (200) |
+| `POST /api/jobs/{id}/retry` | Owner restarts a failed/cancelled job with its saved parameters (202); missing input or an incompatible state returns 409 |
 | `POST /api/segmentations` | Queue a clipping-box operation |
 | `POST /api/transformations` | Queue a coordinate transformation |
 | `POST /api/point-removals` | Queue spherical point removal |
@@ -199,7 +221,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_projects.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_jobs.py tests/test_projects.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
 npm.cmd run test:comparison
@@ -210,6 +232,9 @@ sessions, ownership, visibility, Range requests, uploads, stable identifiers,
 soft deletion, permanent file cleanup, retained job history, legacy imports,
 and restart recovery. Migration tests verify upgrades from the previous schema,
 metadata consistency, and downgrades without losing existing records.
+`tests/test_jobs.py` also checks real process termination (including silent tools
+with closed stdout), cancellation recovery, owner/origin checks, retained inputs,
+queue ordering, retries, concurrent requests, and cancellation during stage changes.
 The integration test uses the
 bundled converter and LASzip for real import, transformation, segmentation,
 and point-removal jobs; it skips when those tools are unavailable.

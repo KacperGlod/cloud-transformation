@@ -202,7 +202,10 @@ def test_ply_conversion_failure_is_reported_and_partial_files_are_removed(applic
     worker.process(worker.claim_next())
     job = client.get(f"/api/jobs/{payload['id']}").json()
     assert job["status"] == "failed" and "Nieprawidłowe punkty PLY" in job["error"]
-    assert not (settings.runtime_dir / payload["id"]).exists()
+    work = settings.runtime_dir / payload["id"]
+    assert [entry.name for entry in work.iterdir()] == ["Źródło.PLY"]
+    assert (work / "Źródło.PLY").read_bytes() == ply_bytes()
+    assert job["canRetry"]
     assert not (settings.clouds_dir / payload["cloudId"]).exists()
 
 
