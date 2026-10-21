@@ -87,6 +87,10 @@ with the current job's percentage when available. Queued tasks and stages that
 have not reported progress show an indeterminate bar. It updates automatically
 and disappears when processing finishes, fails, or is cancelled.
 
+Library row actions have fixed positions, from left to right: **Porównaj**,
+**Otwórz**, **Pobierz**, **Edytuj**, **Usuń**. An omitted optional action
+leaves its position empty, so the remaining controls stay aligned across rows.
+
 - `private` (default): metadata and files are accessible only to the owner.
 - `public`: anyone with the viewer URL can view the converted cloud. Editing,
   processing, job logs, and original-file downloads still require ownership.

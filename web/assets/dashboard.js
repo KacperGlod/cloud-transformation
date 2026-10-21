@@ -134,16 +134,12 @@ function render() {
     const date = new Date(cloud.createdAt).toLocaleString("pl-PL", {
       day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
     });
-    const actionsCell = element("td");
-    const actions = element("div", "row-actions");
+    const actionsCell = element("td", "cloud-actions-cell");
+    const actions = element("div", "row-actions cloud-actions");
     if (cloud.status === "ready") {
-      const open = element("a", "", "Otwórz ↗");
-      open.href = cloud.viewerUrl;
-      open.setAttribute("aria-label", `Otwórz chmurę ${cloud.name}`);
-      actions.append(open);
       if (cloud.parentCloud) {
         const sourceReady = clouds.some(source => source.id === cloud.parentCloud && source.status === "ready");
-        const compare = element(sourceReady ? "a" : "button", "quiet", "Porównaj");
+        const compare = element(sourceReady ? "a" : "button", "quiet cloud-action-compare", "Porównaj");
         compare.setAttribute("aria-label", `Porównaj chmurę ${cloud.name} z oryginałem`);
         if (sourceReady) {
           compare.href = `/compare?cloud=${encodeURIComponent(cloud.id)}`;
@@ -154,6 +150,10 @@ function render() {
         }
         actions.append(compare);
       }
+      const open = element("a", "cloud-action-open", "Otwórz ↗");
+      open.href = cloud.viewerUrl;
+      open.setAttribute("aria-label", `Otwórz chmurę ${cloud.name}`);
+      actions.append(open);
     }
     const canDownload = cloud.status === "ready" && cloud.sourceAvailable;
     const download = element(canDownload ? "a" : "button", "quiet download", "Pobierz");
@@ -168,7 +168,7 @@ function render() {
       download.title = active(cloud.status) ? "Poczekaj na zakończenie przetwarzania" : "Brak pliku źródłowego do pobrania";
     }
     actions.append(download);
-    const edit = element("button", "quiet", "Edytuj");
+    const edit = element("button", "quiet cloud-action-edit", "Edytuj");
     edit.type = "button";
     edit.addEventListener("click", () => {
       selected = cloud;
@@ -177,7 +177,7 @@ function render() {
       byId("edit_status").textContent = "";
       byId("edit_dialog").showModal();
     });
-    const remove = element("button", "quiet", "Usuń");
+    const remove = element("button", "quiet cloud-action-remove", "Usuń");
     remove.type = "button";
     remove.disabled = active(cloud.status);
     remove.title = remove.disabled ? "Poczekaj na zakończenie przetwarzania" : `Usuń ${cloud.name}`;
