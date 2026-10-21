@@ -1,0 +1,39 @@
+.cloud-name-button{padding:0;border:0;border-radius:2px;background:transparent;color:inherit;font:inherit;text-align:left;line-height:inherit;overflow-wrap:anywhere;white-space:normal;cursor:pointer}
+.cloud-name-button:hover{text-decoration:underline;text-underline-offset:3px;color:#a0dfc8}
+.cloud-name-button:focus-visible,.cloud-info-panel button:focus-visible,.cloud-info-panel summary:focus-visible,.cloud-info-panel a:focus-visible{outline:2px solid #94e2c8;outline-offset:4px}
+dialog.cloud-info-panel{position:fixed;inset:0 0 0 auto;margin:0;padding:0;width:min(500px,100vw);max-width:100vw;height:100dvh;max-height:100dvh;box-sizing:border-box;border:0;border-left:1px solid #354149;border-radius:0;background:#171f23;color:#e2e8eb;box-shadow:-16px 0 70px #0006;font:13px/1.5 Arial,sans-serif;text-align:left;overflow:hidden}
+dialog.cloud-info-panel[open]{display:flex;flex-direction:column}
+dialog.cloud-info-panel::backdrop{background:#050b1080;backdrop-filter:blur(2px)}
+.cloud-info-panel *{box-sizing:border-box}
+.cloud-info-panel .cloud-info-header{display:flex;flex-shrink:0;align-items:flex-start;justify-content:space-between;gap:16px;padding:24px;border-bottom:1px solid #303d44;background:#151c20}
+.cloud-info-header>div:first-child{min-width:0}
+.cloud-info-panel h2{margin:0;font-size:20px;line-height:1.3;font-weight:600;letter-spacing:0}
+.cloud-info-panel .cloud-info-name{margin:9px 0 0;color:#a5b9c4;font-size:12px;overflow-wrap:anywhere}
+.cloud-info-header-actions{display:flex;gap:6px;flex-shrink:0}
+.cloud-info-panel button.cloud-info-icon{display:grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0;background:#253239;border:1px solid #394850;border-radius:6px;color:#dce7ec;cursor:pointer;font:23px/1 Arial,sans-serif}
+.cloud-info-panel .cloud-info-body{padding:0 24px 24px;overflow:auto;overscroll-behavior:contain;min-height:0;scrollbar-gutter:stable}
+.cloud-info-panel .cloud-info-status{margin:24px 0;color:#bdcdd5;overflow-wrap:anywhere}
+.cloud-info-panel .cloud-info-status:empty{display:none}
+.cloud-info-section{padding:22px 0;border-bottom:1px solid #303d44}
+.cloud-info-panel h3{font-size:13px;line-height:1.5;font-weight:600;color:#94e2c8;margin:0 0 15px;letter-spacing:0}
+.cloud-info-fields{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.3fr);gap:11px 18px;margin:0}
+.cloud-info-fields dt{color:#a5b9c4;margin:0;overflow-wrap:anywhere}
+.cloud-info-fields dd{margin:0;min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cloud-info-panel .cloud-info-note{font-size:12px;line-height:1.65;color:#a5b9c4;margin:15px 0 0;overflow-wrap:anywhere}
+.cloud-info-panel .cloud-info-bounds{width:100%;border-collapse:collapse;border-spacing:0;text-align:right;table-layout:fixed;white-space:normal;margin:18px 0 0}
+.cloud-info-bounds caption{text-align:left;color:#a5b9c4;font-size:12px;padding:0 0 8px}
+.cloud-info-panel .cloud-info-bounds th,.cloud-info-panel .cloud-info-bounds td{font-size:11px;line-height:1.5;letter-spacing:0;padding:8px 6px;border:0;border-bottom:1px solid #303d44;background:transparent;color:#dce7ec;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;font-weight:400}
+.cloud-info-panel .cloud-info-bounds th:first-child{width:28px;text-align:left;padding-left:0}
+.cloud-info-panel .cloud-info-bounds thead th{color:#a5b9c4}
+.cloud-info-precision{margin-top:18px}
+.cloud-info-precision summary{color:#b8c9d2;cursor:pointer;font-size:12px}
+.cloud-info-precision[open] summary{margin-bottom:14px}
+.cloud-info-precision .cloud-info-fields{font-size:12px}
+.cloud-info-attributes{display:flex;flex-wrap:wrap;gap:7px;list-style:none;margin:0;padding:0}
+.cloud-info-attributes li{padding:5px 8px;background:#253239;border:1px solid #35464e;border-radius:5px;font-size:11px;overflow-wrap:anywhere;max-width:100%}
+.cloud-info-panel a.cloud-info-source{color:#94e2c8;text-decoration:underline;text-underline-offset:3px}
+.cloud-info-notice{padding:12px;border:1px solid #655537;border-radius:6px;background:#332e23;color:#e7ca8d;font-size:12px;margin:20px 0 0}
+.cloud-info-panel .cloud-info-footer{font-size:11px}
+#import_panel .cloud-picker{grid-template-columns:minmax(0,1fr) 38px auto}
+#import_panel .actions>.cloud-info-trigger{width:38px;padding:0;font-size:19px}
+@media(max-width:400px){.cloud-info-panel .cloud-info-header{padding:18px}.cloud-info-panel .cloud-info-body{padding:0 18px 20px}.cloud-info-panel h2{font-size:18px}.cloud-info-fields{gap:10px 12px;font-size:12px}}

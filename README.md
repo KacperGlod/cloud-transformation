@@ -53,6 +53,25 @@ supports LAS/LAZ/PLY/PTS/PTX uploads, renaming, changing visibility, viewing job
 deleting a cloud's files while retaining its metadata. Cloud names need not be unique.
 New clouds have UUID identifiers and directories independent of their names.
 
+Click a cloud's name to open **Informacje o chmurze**, a drawer on the right of
+the library. The viewer opens the same drawer with **ⓘ** beside the cloud
+selector; it describes the currently loaded cloud. The panel shows file and
+view formats, size, dates, point count, XYZ bounds, available viewer attributes,
+and declared CRS/units. Owners also see the original file name, immediate source
+cloud (including a retained record of a deleted source), and saved operation
+parameters/results. Public access does not expose private provenance or operation
+parameters. **↻** refreshes the information; Escape or **×** closes the panel.
+
+`GET /api/clouds/{id}/info` reads bounded LAS/LAZ headers and Potree 1.x/2.x JSON
+metadata on demand, without decoding points or changing the database schema.
+LAS/LAZ bounds take precedence over Potree's padded bounding box. Normalized
+PLY/PTS/PTX imports use the working LAS/LAZ for geometry and retain their original
+format in the panel. Geometry is unavailable until processing finishes. Missing
+or malformed metadata leaves available fields visible with an explanatory notice.
+CRS decoding uses pyproj for LAS WKT/GeoTIFF records, EPSG identifiers, and basic
+legacy Potree PROJ definitions. Units are never inferred from coordinate values;
+a 2D CRS does not define Z units. Unknown CRS/units remain explicitly unknown.
+
 Deletion permanently removes the cloud's original file, working LAS/LAZ, Potree files, and temporary
 job directories from the server. Its database record remains with status
 `deleted` and a UTC `deleted_at` timestamp, along with job history and links
@@ -204,6 +223,7 @@ session cookie for subsequent calls.
 | `GET /api/clouds` | Signed-in user's clouds, including pending/failed uploads |
 | `POST /api/clouds` | Multipart upload: `file`, `name`, optional `visibility` |
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
+| `GET /api/clouds/{id}/info` | Bounded geometry, CRS, viewer attributes, and owner-only source/operation details |
 | `GET /api/clouds/{id}/comparison` | Ready result and its immediate source; requires view access to both |
 | `GET /api/projects`, `POST /api/projects` | List the owner's saved viewer projects (optional `cloudId` filter), or create one with `name`, `cloudId`, and `sceneState` |
 | `GET /api/projects/{id}`, `PUT /api/projects/{id}` | Open or update a private project; updates require `name`, `sceneState`, and the current `revision` |
@@ -231,6 +251,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_jobs.py tests/test_projects.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_cloud_info.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
 npm.cmd run test:comparison

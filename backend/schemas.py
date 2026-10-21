@@ -84,6 +84,42 @@ class ComparisonRead(BaseModel):
     result: CloudRead
 
 
+class CloudBounds(BaseModel):
+    min: Vector
+    max: Vector
+
+
+class CloudReference(BaseModel):
+    name: str | None
+    authority: str | None
+    horizontalUnit: str | None
+    verticalUnit: str | None
+    source: str | None
+
+
+class CloudSource(BaseModel):
+    id: UUID
+    name: str
+    status: str
+    viewerUrl: str | None
+
+
+class CloudInfoRead(BaseModel):
+    cloud: CloudRead
+    sourceFormat: str | None
+    pointCount: int | None
+    bounds: CloudBounds | None
+    scale: Vector | None
+    offset: Vector | None
+    lasVersion: str | None
+    pointFormat: int | None
+    metadataSource: str | None
+    attributes: list[str] | None
+    reference: CloudReference
+    source: CloudSource | None
+    notices: list[str]
+
+
 class JobRead(BaseModel):
     id: UUID
     cloudId: UUID

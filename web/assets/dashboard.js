@@ -1,6 +1,8 @@
 import {api, json, sizeLabel, active, statusLabel, element} from "./common.js";
 import {sortClouds} from "./cloud-sorting.js";
 import {createJobControls} from "./job-controls.js";
+import {createCloudInfoPanel} from "./cloud-info.js";
+const cloudInfo = createCloudInfoPanel();
 const byId = id => document.getElementById(id);
 const sortButtons = document.querySelectorAll(".sort-button");
 let sortColumn = "createdAt";
@@ -124,7 +126,15 @@ function render() {
     const icon = element("span", "cloud-icon", "⠿");
     icon.setAttribute("aria-hidden", "true");
     const description = element("div");
-    description.append(element("strong", "", cloud.name), element("small", "", cloud.format + (cloud.parentCloud ? " · Wynik przetwarzania" : " · Import")));
+    const name = element("button", "cloud-name-button", cloud.name);
+    name.type = "button";
+    name.dataset.cloudInfoId = cloud.id;
+    name.setAttribute("aria-label", `Informacje o chmurze ${cloud.name}`);
+    name.title = "Informacje o chmurze";
+    name.addEventListener("click", () => cloudInfo.open(cloud.id, cloud.name, name));
+    const nameHeading = element("strong");
+    nameHeading.append(name);
+    description.append(nameHeading, element("small", "", cloud.format + (cloud.parentCloud ? " · Wynik przetwarzania" : " · Import")));
     title.append(icon, description);
     nameCell.append(title);
     const statusCell = element("td");

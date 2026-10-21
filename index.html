@@ -15,6 +15,7 @@
 	<link rel="stylesheet" href="./libs/jstree/themes/mixed/style.css">
 	<link rel="stylesheet" href="/assets/viewer-projects.css">
 	<link rel="stylesheet" href="/assets/job-controls.css">
+	<link rel="stylesheet" href="/assets/cloud-info.css">
 
 	<style>
 		:root {
@@ -576,8 +577,9 @@
 		</div>
 
 		<div class="section-label">Wczytaj istniejącą</div>
-		<div class="actions">
+		<div class="actions cloud-picker">
 			<select id="cloud_list" aria-label="Dostępne chmury punktów"></select>
+			<button id="cloud_info" class="secondary-button cloud-info-trigger" type="button" disabled aria-label="Informacje o aktywnej chmurze" title="Informacje o aktywnej chmurze">ⓘ</button>
 			<button id="cloud_load" class="secondary-button" type="button">Wczytaj</button>
 		</div>
 
@@ -833,6 +835,7 @@
 		import {createProjectPanel} from "/assets/viewer-projects.js";
 		import {api} from "/assets/common.js";
 		import {createJobControls, checkJobCancellation} from "/assets/job-controls.js";
+		import {createCloudInfoPanel} from "/assets/cloud-info.js";
 
 		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
 		const requestedProjectId = new URLSearchParams(window.location.search).get("project");
@@ -848,6 +851,8 @@
 		const cloudName = document.getElementById("cloud_name");
 		const cloudList = document.getElementById("cloud_list");
 		const cloudLoad = document.getElementById("cloud_load");
+		const cloudInfoButton = document.getElementById("cloud_info");
+		const cloudInfo = createCloudInfoPanel();
 		const convertButton = document.getElementById("convert_button");
 		const importProgress = document.getElementById("import_progress");
 		const importStatus = document.getElementById("import_status");
@@ -930,6 +935,17 @@
 		});
 		let activePointCloud = null;
 		let activeCloud = null;
+		cloudInfoButton.addEventListener("click", () => {
+			if (!activeCloud?.id) return;
+			flightControls.stop();
+			cloudInfo.open(activeCloud.id, activeCloud.name, cloudInfoButton);
+		});
+		function updateCloudInfoButton() {
+			cloudInfoButton.disabled = !activeCloud?.id;
+			const label = activeCloud?.id ? `Informacje o aktywnej chmurze: ${activeCloud.name}` : "Informacje o aktywnej chmurze";
+			cloudInfoButton.title = label;
+			cloudInfoButton.setAttribute("aria-label", label);
+		}
 		let availableClouds = [];
 		let clippingBoxes = [];
 		let segmentationEngineAvailable = true;
@@ -1340,6 +1356,7 @@
 				activePointCloud = loadedPointClouds.get(normalizedUrl);
 				activePointCloud.visible = true;
 				activeCloud = cloudDescriptor;
+				updateCloudInfoButton();
 				comparisonLink.update();
 				fitActivePointCloud();
 				localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
@@ -1371,6 +1388,7 @@
 					loadedPointClouds.set(normalizedUrl, pointCloud);
 					activePointCloud = pointCloud;
 					activeCloud = cloudDescriptor;
+					updateCloudInfoButton();
 					comparisonLink.update();
 					fitActivePointCloud();
 					localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
@@ -1420,6 +1438,7 @@
 			}
 
 			cloudLoad.disabled = availableClouds.length === 0;
+			updateCloudInfoButton();
 			updateSegmentationControls();
 			return availableClouds;
 		}
