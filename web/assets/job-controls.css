@@ -4,4 +4,17 @@
 .job-controls button:disabled{cursor:default;opacity:.55}
 .job-controls button:focus-visible{outline:2px solid #70b7ff;outline-offset:3px}
 .job-action-hint{flex-basis:100%;margin:0;color:#b4c3cd;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
-.job .job-controls{margin:0 0 .6rem}
+.job-task summary{min-height:30px;flex-wrap:nowrap}
+.job-task summary .job-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-task summary .job-kind,.job-task summary .badge{flex-shrink:0}
+.job-task summary progress{flex:0 0 120px;width:120px}
+.job-task .job-controls{flex:0 0 150px;justify-content:flex-end;flex-wrap:nowrap;margin:0}
+.job-task .job-controls button{min-height:30px;padding:5px 10px;font-size:11px;white-space:nowrap}
+@media(max-width:700px){
+  .job-task summary{display:grid;grid-template-columns:minmax(0,1fr) 120px;grid-template-areas:"name progress" "actions status";grid-template-rows:24px 30px;gap:8px 12px}
+  .job-task summary .job-name{grid-area:name}
+  .job-task summary .job-kind{display:none}
+  .job-task summary .badge{grid-area:status;justify-self:end}
+  .job-task summary progress{grid-area:progress;justify-self:end}
+  .job-task .job-controls{grid-area:actions;justify-content:flex-start}
+}

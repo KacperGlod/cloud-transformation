@@ -206,14 +206,16 @@ function renderJobs() {
   const names = {import: "Import", segmentation: "Segmentacja", transformation: "Transformacja", "point-removal": "Usuwanie punktów"};
   const visibleJobs = [...jobs.filter(job => active(job.status)), ...jobs.filter(job => !active(job.status)).slice(0, 8)];
   for (const job of visibleJobs) {
-    const row = element("article", "job");
-    const controls = createJobControls({onChange: refresh, onError: error => toast(error.message)});
+    const row = element("article", "job job-task");
+    const controls = createJobControls({compact: true, onChange: refresh, onError: error => toast(error.message)});
     controls.update(job);
     const details = element("details", "job-details");
     details.dataset.id = job.id;
     details.open = expanded.has(job.id);
     const summary = element("summary");
-    summary.append(element("strong", "", job.name), element("span", "muted", names[job.kind]), badge(job.status));
+    const name = element("strong", "job-name", job.name);
+    name.title = job.name;
+    summary.append(name, controls.container);
     if (active(job.status)) {
       const progress = element("progress");
       progress.max = 100;
@@ -221,10 +223,12 @@ function renderJobs() {
       progress.setAttribute("aria-label", `Postęp zadania ${job.name}`);
       summary.append(progress);
     }
+    summary.append(element("span", "muted job-kind", names[job.kind]), badge(job.status));
     details.append(summary);
     if (job.error) details.append(element("p", "error", job.error));
+    if (job.retryUnavailableReason) details.append(element("p", "job-action-hint", job.retryUnavailableReason));
     details.append(element("pre", "", job.log || "Zadanie oczekuje na rozpoczęcie."));
-    row.append(controls.container, details);
+    row.append(details);
     byId("job_list").append(row);
   }
   if (!jobs.length) byId("job_list").append(element("p", "muted", "Tutaj zobaczysz przebieg importu i przetwarzania chmur."));

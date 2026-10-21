@@ -2,8 +2,8 @@ import {api, element} from "./common.js";
 
 const pending = new Set();
 
-export function createJobControls({onRetry, onChange, onError}) {
-  const container = element("div", "job-controls");
+export function createJobControls({onRetry, onChange, onError, compact = false}) {
+  const container = element(compact ? "span" : "div", "job-controls");
   container.setAttribute("role", "group");
   container.setAttribute("aria-label", "Sterowanie zadaniem");
   let signature;
@@ -46,7 +46,7 @@ export function createJobControls({onRetry, onChange, onError}) {
       }
     });
     container.append(button);
-    if (retry && job.retryUnavailableReason) container.append(element("p", "job-action-hint", job.retryUnavailableReason));
+    if (!compact && retry && job.retryUnavailableReason) container.append(element("p", "job-action-hint", job.retryUnavailableReason));
   }
 
   return {container, update};
