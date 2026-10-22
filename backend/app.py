@@ -25,6 +25,7 @@ from .schemas import AccountRead, CloudInfoRead, CloudList, CloudName, CloudRead
 from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, get_comparison, import_legacy, job_json
 from .storage import child_path, download_filename, remove_directory
 from .project_routes import register_project_routes
+from .collection_routes import register_collection_routes
 from .project_schemas import MAX_PROJECT_BYTES
 from .projects import get_project, project_cloud
 
@@ -488,6 +489,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return RedirectResponse("/", status_code=303)
 
     register_project_routes(app, settings, get_session)
+    register_collection_routes(app, settings, get_session)
 
     # Explicit mounts prevent serving SQLite, Python source, tools, or runtime files.
     for prefix, directory in (("assets", "web/assets"), ("libs", "libs"), ("build", "build"), ("resources", "resources")):

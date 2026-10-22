@@ -7,7 +7,7 @@ from sqlalchemy import MetaData, Table, inspect, select
 
 from backend.config import Settings
 from backend.database import Database
-from backend.models import Cloud, ProcessingJob, Project, User, utcnow
+from backend.models import Cloud, CloudCollection, CollectionCloud, ProcessingJob, Project, User, utcnow
 
 
 def test_soft_delete_migration_preserves_existing_clouds_and_jobs(tmp_path):
@@ -148,5 +148,61 @@ def test_project_migration_preserves_clouds_and_matches_models(tmp_path):
         with database.session() as session:
             assert session.get(Cloud, cloud_id).processing_file == "working.laz"
             assert session.get(User, owner_id).email == "project-migration@example.test"
+    finally:
+        database.engine.dispose()
+
+
+def test_collection_migration_is_optional_preserves_projects_and_cascades_memberships(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", clouds_dir=tmp_path / "clouds",
+                        runtime_dir=tmp_path / "runtime", database_url="", start_worker=False)
+    settings.prepare()
+    database = Database(settings)
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "backend" / "migrations"))
+    try:
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "0004")
+        with database.session() as session:
+            user = User(email="collection-migration@example.test", password_hash="unused")
+            session.add(user)
+            session.flush()
+            cloud = Cloud(owner_id=user.id, name="Istniejąca chmura", status="ready", storage_key="collection-migration")
+            session.add(cloud)
+            session.flush()
+            project = Project(owner_id=user.id, cloud_id=cloud.id, name="Zapisany widok", scene_state={"schemaVersion": 1})
+            session.add(project)
+            session.commit()
+            owner_id, cloud_id, project_id = user.id, cloud.id, project.id
+        database.migrate()
+        database.migrate()
+        with database.session() as session:
+            assert session.scalar(select(CloudCollection)) is None
+            assert session.scalar(select(CollectionCloud)) is None
+            assert session.get(Project, project_id).cloud_id == cloud_id
+            collection = CloudCollection(owner_id=owner_id, name="Kolekcja")
+            session.add(collection)
+            session.flush()
+            session.add(CollectionCloud(collection_id=collection.id, cloud_id=cloud_id))
+            session.commit()
+            identifier = collection.id
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.check(config)
+            assert {key["referred_table"] for key in inspect(connection).get_foreign_keys("collection_clouds")} == {"cloud_collections", "clouds"}
+        with database.session() as session:
+            session.delete(session.get(CloudCollection, identifier))
+            session.commit()
+            assert session.scalar(select(CollectionCloud)) is None
+            assert session.get(Cloud, cloud_id) is not None
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0004")
+            assert "cloud_collections" not in inspect(connection).get_table_names()
+            assert "collection_clouds" not in inspect(connection).get_table_names()
+        database.migrate()
+        with database.session() as session:
+            assert session.get(Project, project_id).name == "Zapisany widok"
+            assert session.get(Cloud, cloud_id).name == "Istniejąca chmura"
     finally:
         database.engine.dispose()

@@ -70,6 +70,26 @@ class Cloud(Base):
         return None
 
 
+class CloudCollection(Base):
+    __tablename__ = "cloud_collections"
+    __table_args__ = (Index("ix_collection_owner_created", "owner_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class CollectionCloud(Base):
+    __tablename__ = "collection_clouds"
+
+    collection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cloud_collections.id", ondelete="CASCADE"), primary_key=True)
+    cloud_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("clouds.id", ondelete="CASCADE"), primary_key=True, index=True)
+
+
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (

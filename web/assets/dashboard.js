@@ -2,6 +2,7 @@ import {api, json, sizeLabel, active, statusLabel, element} from "./common.js";
 import {sortClouds} from "./cloud-sorting.js";
 import {createJobControls} from "./job-controls.js";
 import {createCloudInfoPanel} from "./cloud-info.js";
+import {createCollections} from "./collections.js";
 const cloudInfo = createCloudInfoPanel();
 const byId = id => document.getElementById(id);
 const sortButtons = document.querySelectorAll(".sort-button");
@@ -12,9 +13,11 @@ let jobs = [];
 let projects = [];
 let selected = null;
 let timer;
+let refreshVersion = 0;
 let toastTimer;
 let uploading = false;
 let changingPassword = false;
+const collectionPanel = createCollections({onFilterChange: render, onChanged: refresh, onError: error => toast(error.message)});
 
 function toast(message) {
   byId("toast").textContent = message;
@@ -115,6 +118,7 @@ function render() {
   const query = byId("search").value.toLocaleLowerCase("pl");
   const status = byId("status_filter").value;
   const matching = clouds.filter(cloud => cloud.name.toLocaleLowerCase("pl").includes(query)
+    && collectionPanel.includes(cloud.id)
     && (status === "all" || (status === "active" ? active(cloud.status) : cloud.status === status)));
   const visible = sortClouds(matching, sortColumn, sortDirection);
   byId("list_count").textContent = visible.length;
@@ -204,7 +208,7 @@ function render() {
   }
   byId("empty_state").hidden = visible.length > 0;
   byId("empty_title").textContent = clouds.length ? "Brak pasujących chmur" : "Twoja biblioteka jest gotowa";
-  byId("empty_description").textContent = clouds.length ? "Zmień nazwę wyszukiwania lub wybrany status." : "Dodaj pierwszy plik LAS, LAZ, PLY, PTS lub PTX, aby rozpocząć pracę.";
+  byId("empty_description").textContent = clouds.length ? (collectionPanel.isFiltered() ? "Zmień kolekcję, wyszukiwanie lub status." : "Zmień nazwę wyszukiwania lub wybrany status.") : "Dodaj pierwszy plik LAS, LAZ, PLY, PTS lub PTX, aby rozpocząć pracę.";
   byId("empty_upload").hidden = clouds.length > 0;
   byId("load_status").textContent = `${clouds.length} chmur w bibliotece · Statusy aktualizują się automatycznie`;
   renderJobs();
@@ -275,17 +279,22 @@ function renderProjects() {
 
 async function refresh() {
   clearTimeout(timer);
+  const version = ++refreshVersion;
   try {
-    const [cloudData, jobData, projectData] = await Promise.all([api("/api/clouds"), api("/api/jobs"), api("/api/projects")]);
+    const [cloudData, jobData, projectData, collectionData] = await Promise.all([
+      api("/api/clouds"), api("/api/jobs"), api("/api/projects"), api("/api/collections"),
+    ]);
+    if (version !== refreshVersion) return;
     clouds = cloudData.clouds;
     jobs = jobData.jobs;
     projects = projectData.projects;
+    collectionPanel.update(collectionData.collections, clouds);
     render();
     renderProjects();
   } catch (error) {
-    byId("load_status").textContent = error.message;
+    if (version === refreshVersion) byId("load_status").textContent = error.message;
   } finally {
-    timer = setTimeout(refresh, jobs.some(job => active(job.status)) ? 2000 : 10000);
+    if (version === refreshVersion) timer = setTimeout(refresh, jobs.some(job => active(job.status)) ? 2000 : 10000);
   }
 }
 byId("search").addEventListener("input", render);

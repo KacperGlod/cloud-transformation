@@ -53,6 +53,29 @@ supports LAS/LAZ/PLY/PTS/PTX uploads, renaming, changing visibility, viewing job
 deleting a cloud's files while retaining its metadata. Cloud names need not be unique.
 New clouds have UUID identifiers and directories independent of their names.
 
+Cloud collections are optional, private groups in the library, independent of
+saved viewer projects. A cloud may belong to several collections or none.
+Use **Nowa kolekcja** to create an empty collection, then select clouds and choose
+**Dodaj wybrane**. The **Kolekcja** filter switches between all clouds, clouds
+without a collection, or a named collection. **Zarządzaj kolekcją** opens its
+membership editor, name field, and delete action. Search and status filters
+continue to apply within the selected collection.
+
+The editor suggests other clouds connected to any current member through source
+and result relationships, including ancestors, descendants, and siblings in the
+same processing family. Suggestions show which member they relate to. They are
+restricted to the owner's library, exclude existing members and deleted clouds,
+and never add anything automatically. Retained deleted source records can still
+connect surviving relatives. New processing results become suggestions as the
+library refreshes. An empty collection has no suggestions; any cloud can be added
+manually, including pending uploads and unrelated clouds.
+
+**Odłącz** removes only the membership. Deleting a collection leaves cloud files,
+jobs, and saved viewer projects intact. Deleted clouds disappear from membership
+lists and counts. Migration `0005` creates `cloud_collections` and
+`collection_clouds`, with a composite membership primary key and cascading
+membership cleanup. Existing clouds are not assigned to any collection.
+
 Click a cloud's name to open **Informacje o chmurze**, a drawer on the right of
 the library. The viewer opens the same drawer with **ⓘ** beside the cloud
 selector; it describes the currently loaded cloud. The panel shows file and
@@ -225,6 +248,12 @@ session cookie for subsequent calls.
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
 | `GET /api/clouds/{id}/info` | Bounded geometry, CRS, viewer attributes, and owner-only source/operation details |
 | `GET /api/clouds/{id}/comparison` | Ready result and its immediate source; requires view access to both |
+| `GET /api/collections`, `POST /api/collections` | List private collections or create one with `name` and optional `cloudIds` |
+| `GET /api/collections/{id}`, `PATCH /api/collections/{id}` | Read membership or rename the owner's collection with `name` |
+| `DELETE /api/collections/{id}` | Delete the collection and its memberships while preserving all clouds |
+| `POST /api/collections/{id}/clouds` | Atomically add `cloudIds` (1–1000 UUIDs per request); repeat adds are idempotent |
+| `DELETE /api/collections/{id}/clouds/{cloudId}` | Idempotently detach one cloud; returns updated collection |
+| `GET /api/collections/{id}/suggestions` | Related candidates with `cloudId`, `relatedCloudId`, `relatedCloudName`, and graph `distance` |
 | `GET /api/projects`, `POST /api/projects` | List the owner's saved viewer projects (optional `cloudId` filter), or create one with `name`, `cloudId`, and `sceneState` |
 | `GET /api/projects/{id}`, `PUT /api/projects/{id}` | Open or update a private project; updates require `name`, `sceneState`, and the current `revision` |
 | `DELETE /api/projects/{id}` | Delete a saved project while keeping the cloud and its files |
@@ -252,6 +281,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_jobs.py tests/test_projects.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_cloud_info.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_collections.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
 npm.cmd run test:comparison
@@ -262,6 +292,9 @@ sessions, ownership, visibility, Range requests, uploads, stable identifiers,
 soft deletion, permanent file cleanup, retained job history, legacy imports,
 and restart recovery. Migration tests verify upgrades from the previous schema,
 metadata consistency, and downgrades without losing existing records.
+Collection tests cover optional and shared membership, private access, atomic
+batch validation, source/result suggestions, deleted links and cycles, restart
+persistence, and preservation of files and viewer projects when removing a collection.
 `tests/test_jobs.py` also checks real process termination (including silent tools
 with closed stdout), cancellation recovery, owner/origin checks, retained inputs,
 queue ordering, retries, concurrent requests, and cancellation during stage changes.
