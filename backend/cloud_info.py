@@ -1,11 +1,12 @@
 """Combine cloud provenance with bounded, on-demand geometry metadata."""
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .cloud_metadata import UNKNOWN_REFERENCE, read_las_metadata, read_potree_metadata
 from .config import Settings
-from .models import Cloud, User
+from .models import Cloud, CloudCollection, CollectionCloud, User
 from .services import cloud_json
 from .storage import child_path
 
@@ -15,7 +16,14 @@ def cloud_info(session: Session, cloud: Cloud, user: User | None, settings: Sett
     info = {"cloud": descriptor, "sourceFormat": Path(cloud.source_file).suffix[1:].upper() if cloud.source_file else None,
             "pointCount": None, "bounds": None, "scale": None, "offset": None,
             "lasVersion": None, "pointFormat": None, "metadataSource": None,
-            "attributes": None, "reference": dict(UNKNOWN_REFERENCE), "source": None, "notices": []}
+            "attributes": None, "reference": dict(UNKNOWN_REFERENCE), "source": None,
+            "collections": None, "notices": []}
+    if descriptor["canEdit"]:
+        memberships = session.execute(select(CloudCollection.id, CloudCollection.name).join(
+            CollectionCloud, CollectionCloud.collection_id == CloudCollection.id).where(
+                CollectionCloud.cloud_id == cloud.id, CloudCollection.owner_id == user.id)
+            .order_by(CloudCollection.created_at, CloudCollection.id))
+        info["collections"] = [{"id": str(item.id), "name": item.name} for item in memberships]
     if descriptor["canEdit"] and cloud.parent_id:
         parent = session.get(Cloud, cloud.parent_id)
         if parent and parent.owner_id == user.id:

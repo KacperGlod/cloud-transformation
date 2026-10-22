@@ -104,6 +104,11 @@ class CloudSource(BaseModel):
     viewerUrl: str | None
 
 
+class CloudCollectionMembership(BaseModel):
+    id: UUID
+    name: str
+
+
 class CloudInfoRead(BaseModel):
     cloud: CloudRead
     sourceFormat: str | None
@@ -117,6 +122,7 @@ class CloudInfoRead(BaseModel):
     attributes: list[str] | None
     reference: CloudReference
     source: CloudSource | None
+    collections: list[CloudCollectionMembership] | None
     notices: list[str]
 
 

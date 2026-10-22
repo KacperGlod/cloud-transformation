@@ -183,3 +183,46 @@ def test_bounded_parsing_and_untrusted_projection(tmp_path):
     path.write_text(json.dumps({"attributes": [{"name": "position", "min": [5, 6, 7], "max": [8, 9, 10]}],
         "boundingBox": {"min": [0, 0, 0], "max": [100, 100, 100]}}))
     assert read_potree_metadata(path)["bounds"] == {"min": [5, 6, 7], "max": [8, 9, 10]}
+
+
+def test_information_lists_only_actual_memberships_and_reflects_changes(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    cloud, _ = seed_cloud(app, settings, owner)
+    other, _ = seed_cloud(app, settings, owner, parent=uuid.UUID(cloud))
+    route = f"/api/clouds/{cloud}/info"
+    assert client.get(route).json()["collections"] == []
+    first = client.post("/api/collections", json={"name": "Most Kraków", "cloudIds": [cloud]}).json()
+    second = client.post("/api/collections", json={"name": "Inwentaryzacja", "cloudIds": [cloud, other]}).json()
+    unrelated = client.post("/api/collections", json={"name": "Tylko wynik", "cloudIds": [other]}).json()
+    assert client.get(route).json()["collections"] == [
+        {"id": first["id"], "name": first["name"]}, {"id": second["id"], "name": second["name"]}]
+    assert unrelated["id"] not in {item["id"] for item in client.get(route).json()["collections"]}
+    client.patch(f"/api/collections/{first['id']}", json={"name": "Nowa nazwa"})
+    assert client.get(route).json()["collections"][0]["name"] == "Nowa nazwa"
+    client.delete(f"/api/collections/{first['id']}/clouds/{cloud}")
+    assert client.get(route).json()["collections"] == [{"id": second["id"], "name": second["name"]}]
+    client.delete(f"/api/collections/{second['id']}")
+    assert client.get(route).json()["collections"] == []
+
+
+def test_information_hides_collection_names_and_ids_on_public_clouds(application):
+    app, client, settings = application
+    owner, owner_cookies = register(client)
+    cloud, _ = seed_cloud(app, settings, owner, visibility="public")
+    collection = client.post("/api/collections", json={"name": "Prywatna kolekcja", "cloudIds": [cloud]}).json()
+    route = f"/api/clouds/{cloud}/info"
+    assert client.get(route).json()["collections"] == [{"id": collection["id"], "name": collection["name"]}]
+    client.cookies.clear()
+    public = client.get(route)
+    assert public.status_code == 200 and public.json()["collections"] is None
+    assert collection["name"] not in public.text and collection["id"] not in public.text
+    register(client, "collection-info-other@example.test")
+    foreign = client.get(route)
+    assert foreign.json()["collections"] is None
+    assert collection["name"] not in foreign.text and collection["id"] not in foreign.text
+    use_cookies(client, owner_cookies)
+    with app.state.database.session() as session:
+        session.get(Cloud, uuid.UUID(cloud)).status = "queued"
+        session.commit()
+    assert client.get(route).json()["collections"] == [{"id": collection["id"], "name": collection["name"]}]
