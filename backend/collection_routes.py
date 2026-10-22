@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from .auth import current_user
 from .collection_schemas import (CollectionAddClouds, CollectionCreate, CollectionList,
-                                 CollectionRead, CollectionRename, CollectionSuggestions)
+                                 CollectionRead, CollectionSuggestions, CollectionUpdate)
 from .collections import add_collection_clouds, collection_json, collection_members, collection_suggestions, get_collection
 from .models import CloudCollection, CollectionCloud, utcnow
 
@@ -27,7 +27,8 @@ def register_collection_routes(app, settings, get_session):
     def create_collection(body: CollectionCreate, request: Request, session=Depends(get_session)):
         user = current_user(request, session)
         with FileLock(str(settings.data_dir / "cloud-mutations.lock"), timeout=30):
-            collection = CloudCollection(owner_id=user.id, name=body.name)
+            collection = CloudCollection(owner_id=user.id, name=body.name,
+                                         description=body.description, notes=body.notes)
             session.add(collection)
             session.flush()
             add_collection_clouds(session, collection, body.cloudIds, user)
@@ -40,11 +41,12 @@ def register_collection_routes(app, settings, get_session):
         return detail(session, get_collection(session, identifier, user), user)
 
     @app.patch("/api/collections/{identifier}", response_model=CollectionRead)
-    def rename_collection(identifier: UUID, body: CollectionRename, request: Request, session=Depends(get_session)):
+    def update_collection(identifier: UUID, body: CollectionUpdate, request: Request, session=Depends(get_session)):
         user = current_user(request, session)
         with FileLock(str(settings.data_dir / "cloud-mutations.lock"), timeout=30):
             collection = get_collection(session, identifier, user)
-            collection.name = body.name
+            for field, value in body.model_dump(exclude_unset=True).items():
+                setattr(collection, field, value)
             session.commit()
             return detail(session, collection, user)
 

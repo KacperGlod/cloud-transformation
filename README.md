@@ -58,8 +58,17 @@ saved viewer projects. A cloud may belong to several collections or none.
 Use **Nowa kolekcja** to create an empty collection, then select clouds and choose
 **Dodaj wybrane**. The **Kolekcja** filter switches between all clouds, clouds
 without a collection, or a named collection. **Zarządzaj kolekcją** opens its
-membership editor, name field, and delete action. Search and status filters
+membership editor, name/description/notes fields, and delete action. Search and status filters
 continue to apply within the selected collection.
+
+Descriptions and notes are optional plain text, available during creation and in
+**Zarządzaj kolekcją**. Use **Zapisz dane kolekcji** to save changes. Descriptions
+accept up to 2,000 characters and notes up to 20,000, preserving internal line
+breaks; blank fields clear their contents. Text remains private to the collection's
+owner. Polling, manual refresh, and membership changes preserve unsaved edits.
+Only changed fields are sent when saving, so editing notes does not overwrite
+an untouched description or name. Migration `0006` adds the two text columns with
+empty defaults for existing collections, preserving memberships and saved projects.
 
 The editor suggests other clouds connected to any current member through source
 and result relationships, including ancestors, descendants, and siblings in the
@@ -262,8 +271,8 @@ session cookie for subsequent calls.
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
 | `GET /api/clouds/{id}/info` | Bounded geometry, CRS, viewer attributes, and owner-only source/operation details |
 | `GET /api/clouds/{id}/comparison` | Ready result and its immediate source; requires view access to both |
-| `GET /api/collections`, `POST /api/collections` | List private collections or create one with `name` and optional `cloudIds` |
-| `GET /api/collections/{id}`, `PATCH /api/collections/{id}` | Read membership or rename the owner's collection with `name` |
+| `GET /api/collections`, `POST /api/collections` | List private collections or create one with `name`, optional `cloudIds`, `description`, and `notes` |
+| `GET /api/collections/{id}`, `PATCH /api/collections/{id}` | Read membership and text, or update any subset of `name`, `description`, and `notes`; omitted fields are preserved, empty text clears content, and null is rejected |
 | `DELETE /api/collections/{id}` | Delete the collection and its memberships while preserving all clouds |
 | `POST /api/collections/{id}/clouds` | Atomically add `cloudIds` (1–1000 UUIDs per request); repeat adds are idempotent |
 | `DELETE /api/collections/{id}/clouds/{cloudId}` | Idempotently detach one cloud; returns updated collection |
@@ -309,6 +318,8 @@ metadata consistency, and downgrades without losing existing records.
 Collection tests cover optional and shared membership, private access, atomic
 batch validation, source/result suggestions, deleted links and cycles, restart
 persistence, and preservation of files and viewer projects when removing a collection.
+They also check optional description/notes, length validation, partial updates,
+clearing fields, privacy, and migration of existing collections without losing memberships.
 `tests/test_jobs.py` also checks real process termination (including silent tools
 with closed stdout), cancellation recovery, owner/origin checks, retained inputs,
 queue ordering, retries, concurrent requests, and cancellation during stage changes.

@@ -67,13 +67,20 @@
       <div class="dialog-header"><h2 id="collection_create_title">Nowa kolekcja</h2><button class="quiet" data-collection-close type="button" aria-label="Zamknij">×</button></div>
       <p class="muted">Kolekcja może być pusta. Chmury dodasz w następnym kroku.</p>
       <label>Nazwa kolekcji<input id="collection_create_name" maxlength="120" required placeholder="np. Most Kraków" autofocus></label>
+      <label>Opis (opcjonalny)<textarea id="collection_create_description" maxlength="2000" rows="2" placeholder="Czego dotyczą chmury w tej kolekcji?"></textarea></label>
+      <label>Notatki (opcjonalne)<textarea id="collection_create_notes" maxlength="20000" rows="3" placeholder="Uwagi do pomiarów i dalszego przetwarzania…"></textarea></label>
       <p id="collection_create_status" class="form-status" role="status"></p>
       <div class="dialog-actions"><button class="secondary" data-collection-close type="button">Anuluj</button><button class="primary" type="submit">Utwórz kolekcję</button></div>
     </form>
   </dialog>
   <dialog id="collection_dialog" aria-labelledby="collection_title">
     <div class="dialog-header"><h2 id="collection_title">Kolekcja chmur</h2><div class="collection-header-actions"><button id="collection_refresh" class="quiet" type="button" aria-label="Odśwież kolekcję" title="Odśwież kolekcję">↻</button><button class="quiet" data-collection-close type="button" aria-label="Zamknij">×</button></div></div>
-    <form id="collection_name_form" class="collection-name-form"><label for="collection_name">Nazwa kolekcji</label><div><input id="collection_name" maxlength="120" required><button class="secondary" type="submit">Zapisz nazwę</button></div></form>
+    <form id="collection_details_form" class="collection-details-form">
+      <label for="collection_name">Nazwa kolekcji</label><input id="collection_name" maxlength="120" required>
+      <label for="collection_description">Opis (opcjonalny)</label><textarea id="collection_description" maxlength="2000" rows="3" placeholder="Czego dotyczą chmury w tej kolekcji?"></textarea>
+      <label for="collection_notes">Notatki (opcjonalne)</label><textarea id="collection_notes" maxlength="20000" rows="5" placeholder="Uwagi do pomiarów i dalszego przetwarzania…"></textarea>
+      <div class="collection-details-actions"><button id="collection_save" class="secondary" type="submit" disabled>Zapisz dane kolekcji</button></div>
+    </form>
     <p id="collection_status" class="form-status" role="status"></p>
     <div id="collection_content">
       <section class="collection-section"><h3>W kolekcji <span id="collection_member_count" class="counter">0</span></h3><ul id="collection_members" class="collection-cloud-list"></ul></section>

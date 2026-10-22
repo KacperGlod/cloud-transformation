@@ -156,3 +156,54 @@ def test_pending_clouds_names_validation_origin_and_restart(application):
     with TestClient(create_app(settings)) as restarted:
         use_cookies(restarted, cookies)
         assert restarted.get(f"/api/collections/{collection['id']}").json() == collection
+
+
+def test_description_and_notes_are_optional_private_and_saved_across_restart(application):
+    app, client, settings = application
+    owner, cookies = register(client)
+    cloud, _ = seed_cloud(app, settings, owner, visibility="public")
+    empty = create(client).json()
+    assert empty["description"] == empty["notes"] == ""
+    notes = "Pomiar elewacji — Łąkowa\nSprawdzić dach.\n<img src=x onerror=alert(1)>"
+    response = client.post("/api/collections", json={"name": "Most", "cloudIds": [cloud],
+        "description": "  Chmury mostu w Krakowie  ", "notes": notes})
+    assert response.status_code == 201, response.text
+    collection = response.json()
+    route = f"/api/collections/{collection['id']}"
+    assert collection["description"] == "Chmury mostu w Krakowie" and collection["notes"] == notes
+    updated = client.patch(route, json={"notes": "Nowa notatka\nDruga linia"}).json()
+    assert updated["description"] == collection["description"] and updated["name"] == "Most"
+    assert updated["cloudIds"] == [cloud]
+    renamed = client.patch(route, json={"name": "Nowa nazwa"}).json()
+    assert renamed["notes"] == updated["notes"] and renamed["description"] == collection["description"]
+    cleared = client.patch(route, json={"description": ""}).json()
+    assert cleared["description"] == "" and cleared["notes"] == updated["notes"]
+    assert next(item for item in client.get("/api/collections").json()["collections"] if item["id"] == collection["id"]) == cleared
+    with TestClient(create_app(settings)) as restarted:
+        use_cookies(restarted, cookies)
+        assert restarted.get(route).json() == cleared
+    client.cookies.clear()
+    assert client.get(route).status_code == 401
+    assert client.patch(route, json={"notes": "Obca zmiana"}).status_code == 401
+    public = client.get(f"/api/clouds/{cloud}/info")
+    assert "Nowa notatka" not in public.text and public.json()["collections"] is None
+    register(client, "notes-other@example.test")
+    assert client.get(route).status_code == 404
+    assert client.patch(route, json={"description": "Obcy opis"}).status_code == 404
+    assert client.get("/api/collections").json()["collections"] == []
+
+
+def test_collection_text_validation_and_partial_update_preserve_other_fields(application):
+    _, client, _ = application
+    register(client)
+    collection = client.post("/api/collections", json={"name": "Granice", "description": "d" * 2000,
+        "notes": "n" * 20000}).json()
+    route = f"/api/collections/{collection['id']}"
+    assert len(collection["description"]) == 2000 and len(collection["notes"]) == 20000
+    for bad in [{"description": "x" * 2001}, {"notes": "x" * 20001}, {"notes": None},
+                {"description": None}, {"name": None}, {"description": 12}, {"notes": {"text": "bad"}}]:
+        assert client.patch(route, json=bad).status_code == 422
+        assert client.post("/api/collections", json={"name": "Nie zapisuj", **bad}).status_code == 422
+    assert client.get(route).json() == collection
+    assert client.patch(route, json={}).json() == collection
+    assert client.patch(route, json={"notes": ""}).json()["description"] == collection["description"]

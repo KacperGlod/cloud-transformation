@@ -31,6 +31,7 @@ def collection_members(session: Session, collection_ids: list[UUID], user: User)
 
 def collection_json(collection: CloudCollection, cloud_ids: list[UUID]) -> dict:
     return {"id": str(collection.id), "name": collection.name,
+            "description": collection.description, "notes": collection.notes,
             "cloudIds": [str(identifier) for identifier in cloud_ids],
             "createdAt": iso_utc(collection.created_at), "updatedAt": iso_utc(collection.updated_at)}
 

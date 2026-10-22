@@ -206,3 +206,58 @@ def test_collection_migration_is_optional_preserves_projects_and_cascades_member
             assert session.get(Cloud, cloud_id).name == "Istniejąca chmura"
     finally:
         database.engine.dispose()
+
+
+def test_collection_details_migration_preserves_existing_memberships_and_projects(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", clouds_dir=tmp_path / "clouds",
+                        runtime_dir=tmp_path / "runtime", database_url="", start_worker=False)
+    settings.prepare()
+    database = Database(settings)
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "backend" / "migrations"))
+    collection_id = uuid.uuid4()
+    try:
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "0005")
+        with database.session() as session:
+            user = User(email="details-migration@example.test", password_hash="unused")
+            session.add(user)
+            session.flush()
+            cloud = Cloud(owner_id=user.id, name="Chmura", status="ready", storage_key="details-migration")
+            session.add(cloud)
+            session.flush()
+            project = Project(owner_id=user.id, cloud_id=cloud.id, name="Widok", scene_state={"schemaVersion": 1})
+            session.add(project)
+            session.commit()
+            owner_id, cloud_id, project_id = user.id, cloud.id, project.id
+        with database.engine.begin() as connection:
+            collections = Table("cloud_collections", MetaData(), autoload_with=connection)
+            connection.execute(collections.insert(), {"id": collection_id.hex, "owner_id": owner_id.hex,
+                "name": "Istniejąca kolekcja", "created_at": utcnow(), "updated_at": utcnow()})
+            memberships = Table("collection_clouds", MetaData(), autoload_with=connection)
+            connection.execute(memberships.insert(), {"collection_id": collection_id.hex, "cloud_id": cloud_id.hex})
+        database.migrate()
+        database.migrate()
+        with database.session() as session:
+            collection = session.get(CloudCollection, collection_id)
+            assert collection.description == collection.notes == ""
+            assert collection.name == "Istniejąca kolekcja"
+            assert session.get(CollectionCloud, (collection_id, cloud_id)) is not None
+            collection.description, collection.notes = "Opis", "Pierwsza linia\nDruga linia"
+            session.commit()
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.check(config)
+            command.downgrade(config, "0005")
+            columns = {column["name"] for column in inspect(connection).get_columns("cloud_collections")}
+            assert "description" not in columns and "notes" not in columns
+            assert connection.scalar(select(Table("collection_clouds", MetaData(), autoload_with=connection).c.cloud_id)) == cloud_id.hex
+        database.migrate()
+        with database.session() as session:
+            assert session.get(CloudCollection, collection_id).name == "Istniejąca kolekcja"
+            assert session.get(CloudCollection, collection_id).description == ""
+            assert session.get(CollectionCloud, (collection_id, cloud_id)) is not None
+            assert session.get(Project, project_id).name == "Widok"
+    finally:
+        database.engine.dispose()

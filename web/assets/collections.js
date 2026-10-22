@@ -9,6 +9,7 @@ export function createCollections({onFilterChange, onChanged, onError}) {
   let current = null, mutating = false, creating = false, loading = false;
   let controller, requestVersion = 0, editorSignature = "";
   const selected = new Set();
+  const editableFields = ["name", "description", "notes"];
   let requestedFilter = new URLSearchParams(window.location.search).get("collection");
 
   function syncFilterUrl() {
@@ -32,13 +33,23 @@ export function createCollections({onFilterChange, onChanged, onError}) {
   }
 
   function updateControls() {
-    for (const control of dialog.querySelectorAll("button,input")) {
-      control.disabled = mutating || (loading && !control.hasAttribute("data-collection-close") && control.id !== "collection_refresh");
+    for (const control of dialog.querySelectorAll("button,input,textarea")) {
+      const editable = editableFields.some(field => control.id === `collection_${field}`);
+      control.disabled = mutating || (loading && !editable && !control.hasAttribute("data-collection-close") && control.id !== "collection_refresh");
     }
+    byId("collection_save").disabled = mutating || loading || !editableFields.some(field =>
+      byId(`collection_${field}`).value !== (current?.[field] || ""));
     byId("collection_add").disabled = mutating || loading || !selected.size;
     byId("collection_select_suggestions").disabled = mutating || loading || !suggestions.length;
     byId("collection_selected_count").textContent = selected.size ? `Wybrano chmur: ${selected.size}` : "Nie wybrano chmur";
     byId("collection_content").setAttribute("aria-busy", String(loading || mutating));
+  }
+
+  function syncDraft(collection, reset = false, savedFields = []) {
+    for (const field of editableFields) {
+      const input = byId(`collection_${field}`);
+      if (reset || savedFields.includes(field) || input.value === (current?.[field] || "")) input.value = collection[field] || "";
+    }
   }
 
   function renderLists() {
@@ -100,7 +111,7 @@ export function createCollections({onFilterChange, onChanged, onError}) {
     if (focusedId) dialog.querySelector(`[data-collection-choice="${CSS.escape(focusedId)}"]`)?.focus({preventScroll: true});
   }
 
-  async function loadEditor(reset = false) {
+  async function loadEditor() {
     controller?.abort();
     controller = new AbortController();
     const version = ++requestVersion, id = current.id;
@@ -113,7 +124,7 @@ export function createCollections({onFilterChange, onChanged, onError}) {
         api(`/api/collections/${id}/suggestions`, {signal: controller.signal}),
       ]);
       if (version !== requestVersion || !dialog.open) return;
-      if (reset || byId("collection_name").value === current.name) byId("collection_name").value = collection.name;
+      syncDraft(collection);
       current = collection;
       suggestions = result.suggestions;
       byId("collection_status").textContent = "";
@@ -130,19 +141,21 @@ export function createCollections({onFilterChange, onChanged, onError}) {
     suggestions = [];
     selected.clear();
     byId("collection_search").value = "";
-    byId("collection_name").value = collection.name;
+    syncDraft(collection, true);
     dialog.showModal();
     renderLists();
-    loadEditor(true);
+    loadEditor();
   }
 
-  async function mutate(action) {
+  async function mutate(action, savedFields = []) {
     if (mutating || loading) return;
     mutating = true;
     byId("collection_status").textContent = "Zapisywanie…";
     updateControls();
     try {
-      current = await action();
+      const updated = await action();
+      syncDraft(updated, false, savedFields);
+      current = updated;
       collections = collections.map(item => item.id === current.id ? current : item);
       renderToolbar();
       await onChanged();
@@ -167,7 +180,11 @@ export function createCollections({onFilterChange, onChanged, onError}) {
     creating = true;
     for (const control of event.target.elements) control.disabled = true;
     try {
-      const collection = await api("/api/collections", json("POST", {name: byId("collection_create_name").value}));
+      const collection = await api("/api/collections", json("POST", {
+        name: byId("collection_create_name").value,
+        description: byId("collection_create_description").value,
+        notes: byId("collection_create_notes").value,
+      }));
       collections.push(collection);
       renderToolbar(); filter.value = collection.id; renderToolbar();
       syncFilterUrl();
@@ -180,10 +197,13 @@ export function createCollections({onFilterChange, onChanged, onError}) {
       for (const control of event.target.elements) control.disabled = false;
     }
   });
-  byId("collection_name_form").addEventListener("submit", event => {
+  byId("collection_details_form").addEventListener("submit", event => {
     event.preventDefault();
-    mutate(() => api(`/api/collections/${current.id}`, json("PATCH", {name: byId("collection_name").value})));
+    const changes = Object.fromEntries(editableFields.filter(field =>
+      byId(`collection_${field}`).value !== (current[field] || "")).map(field => [field, byId(`collection_${field}`).value]));
+    if (Object.keys(changes).length) mutate(() => api(`/api/collections/${current.id}`, json("PATCH", changes)), Object.keys(changes));
   });
+  for (const field of editableFields) byId(`collection_${field}`).addEventListener("input", updateControls);
   byId("collection_add_form").addEventListener("submit", event => {
     event.preventDefault();
     if (selected.size) mutate(() => api(`/api/collections/${current.id}/clouds`, json("POST", {cloudIds: [...selected]})));
