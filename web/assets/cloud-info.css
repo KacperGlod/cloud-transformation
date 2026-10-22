@@ -17,6 +17,8 @@ dialog.cloud-info-panel::backdrop{background:#050b1080;backdrop-filter:blur(2px)
 .cloud-info-collections{list-style:none;margin:0;padding:0}
 .cloud-info-collections li{padding:13px 0;border-bottom:1px solid #303d44;overflow-wrap:anywhere}
 .cloud-info-collections li:last-child{border-bottom:0;padding-bottom:0}
+.cloud-info-panel a.cloud-info-collection-link{display:block;color:#94e2c8;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
+.cloud-info-panel a.cloud-info-collection-link:hover{color:#c6f4e4}
 .cloud-info-panel button.cloud-info-icon{display:grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0;background:#253239;border:1px solid #394850;border-radius:6px;color:#dce7ec;cursor:pointer;font:23px/1 Arial,sans-serif}
 .cloud-info-panel .cloud-info-body{padding:0 24px 24px;overflow:auto;overscroll-behavior:contain;min-height:0;scrollbar-gutter:stable}
 .cloud-info-panel .cloud-info-status{margin:24px 0;color:#bdcdd5;overflow-wrap:anywhere}

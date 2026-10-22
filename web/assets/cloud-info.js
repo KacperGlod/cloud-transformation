@@ -135,7 +135,7 @@ function renderInfo(container, info) {
   if (info.metadataSource) container.append(element("p", "cloud-info-note cloud-info-footer", `Źródło danych geometrycznych: ${info.metadataSource}.`));
 }
 
-function renderCollections(container, info) {
+function renderCollections(container, info, onSelect) {
   if (!info.cloud.canEdit) {
     container.append(element("p", "cloud-info-note", "Przynależność do kolekcji jest widoczna tylko właścicielowi chmury."));
   } else if (!Array.isArray(info.collections)) {
@@ -146,12 +146,23 @@ function renderCollections(container, info) {
     const group = section(container, "Kolekcje tej chmury");
     group.list.remove();
     const list = element("ul", "cloud-info-collections");
-    for (const collection of info.collections) list.append(element("li", "", collection.name));
+    for (const collection of info.collections) {
+      const item = element("li");
+      const link = element("a", "cloud-info-collection-link", collection.name);
+      link.href = `/?collection=${encodeURIComponent(collection.id)}`;
+      link.title = `Pokaż chmury z kolekcji ${collection.name}`;
+      if (onSelect) link.addEventListener("click", event => {
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        if (onSelect(collection)) event.preventDefault();
+      });
+      item.append(link);
+      list.append(item);
+    }
     group.node.append(list);
   }
 }
 
-export function createCloudInfoPanel() {
+export function createCloudInfoPanel({onCollectionSelect} = {}) {
   const dialog = element("dialog", "cloud-info-panel");
   dialog.setAttribute("aria-labelledby", "cloud_info_heading");
   const header = element("header", "cloud-info-header");
@@ -232,7 +243,14 @@ export function createCloudInfoPanel() {
       if (version !== requestVersion || !dialog.open) return;
       name.textContent = info.cloud.name;
       renderInfo(content, info);
-      renderCollections(collectionContent, info);
+      renderCollections(collectionContent, info, onCollectionSelect ? collection => {
+        // Local navigation returns its focus target; otherwise the regular library link is used.
+        const focusTarget = onCollectionSelect(collection);
+        if (!focusTarget) return false;
+        trigger = focusTarget;
+        dialog.close();
+        return true;
+      } : null);
       if (info.cloud.canEdit && Array.isArray(info.collections)) tabs[1].button.textContent = `Kolekcje (${info.collections.length})`;
       status.textContent = "";
     } catch (error) {

@@ -89,6 +89,12 @@ selected cloud's current collection memberships, with a count in the tab and an
 explicit empty state for unassigned clouds. Memberships are visible only to the
 owner, including for public clouds. Refresh preserves the selected tab and reads
 current names and memberships. Arrow keys, Home, and End navigate between tabs.
+Click a collection name to close the drawer and filter the library to that
+collection, clearing the cloud search and status filter. In the viewer, the same
+link opens the filtered library. Collection links use `/?collection={id}` and
+can also be opened in a new tab; the selected collection survives a reload.
+`/?collection=unassigned` selects clouds without membership. An unavailable
+collection falls back to all clouds with an explanatory message.
 The info API returns `collections` as `{id, name}` entries for the owner, an
 empty list for no membership, or `null` for other viewers. Collections are also
 available before point processing finishes. This does not require a new migration.

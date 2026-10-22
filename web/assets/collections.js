@@ -9,6 +9,14 @@ export function createCollections({onFilterChange, onChanged, onError}) {
   let current = null, mutating = false, creating = false, loading = false;
   let controller, requestVersion = 0, editorSignature = "";
   const selected = new Set();
+  let requestedFilter = new URLSearchParams(window.location.search).get("collection");
+
+  function syncFilterUrl() {
+    const url = new URL(window.location.href);
+    if (filter.value === "all") url.searchParams.delete("collection");
+    else url.searchParams.set("collection", filter.value);
+    if (url.href !== window.location.href) window.history.replaceState(window.history.state, "", url);
+  }
 
   function renderToolbar() {
     const previous = filter.value;
@@ -143,7 +151,7 @@ export function createCollections({onFilterChange, onChanged, onError}) {
     finally { mutating = false; updateControls(); }
   }
 
-  filter.addEventListener("change", () => { renderToolbar(); onFilterChange(); });
+  filter.addEventListener("change", () => { renderToolbar(); syncFilterUrl(); onFilterChange(); });
   byId("collection_manage").addEventListener("click", () => {
     const collection = collections.find(item => item.id === filter.value);
     if (collection) openEditor(collection);
@@ -162,6 +170,7 @@ export function createCollections({onFilterChange, onChanged, onError}) {
       const collection = await api("/api/collections", json("POST", {name: byId("collection_create_name").value}));
       collections.push(collection);
       renderToolbar(); filter.value = collection.id; renderToolbar();
+      syncFilterUrl();
       createDialog.close();
       await onChanged();
       openEditor(collection);
@@ -198,6 +207,7 @@ export function createCollections({onFilterChange, onChanged, onError}) {
       await api(`/api/collections/${current.id}`, {method: "DELETE"});
       collections = collections.filter(item => item.id !== current.id);
       dialog.close(); renderToolbar(); onFilterChange();
+      syncFilterUrl();
       await onChanged();
     } catch (error) { byId("collection_status").textContent = error.message; }
     finally { mutating = false; updateControls(); }
@@ -215,6 +225,15 @@ export function createCollections({onFilterChange, onChanged, onError}) {
       collections = data;
       clouds = cloudData;
       renderToolbar();
+      if (requestedFilter !== null) {
+        const requested = requestedFilter;
+        requestedFilter = null;
+        if (requested === "unassigned" || data.some(item => item.id === requested)) {
+          filter.value = requested;
+          renderToolbar();
+        } else if (requested !== "all") onError(new Error("Kolekcja jest niedostępna. Pokazano wszystkie chmury."));
+      }
+      syncFilterUrl();
       const signature = JSON.stringify([data, cloudData.map(cloud => [cloud.id, cloud.name, cloud.status, cloud.parentCloud])]);
       if (dialog.open && !mutating) {
         if (!data.some(item => item.id === current.id)) {
@@ -229,5 +248,14 @@ export function createCollections({onFilterChange, onChanged, onError}) {
       return collections.find(item => item.id === filter.value)?.cloudIds.includes(cloudId) || false;
     },
     isFiltered: () => filter.value !== "all",
+    select(identifier) {
+      if (!collections.some(item => item.id === identifier)) return false;
+      requestedFilter = null;
+      filter.value = identifier;
+      renderToolbar();
+      syncFilterUrl();
+      onFilterChange();
+      return true;
+    },
   };
 }

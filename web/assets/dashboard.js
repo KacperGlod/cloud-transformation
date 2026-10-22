@@ -3,7 +3,14 @@ import {sortClouds} from "./cloud-sorting.js";
 import {createJobControls} from "./job-controls.js";
 import {createCloudInfoPanel} from "./cloud-info.js";
 import {createCollections} from "./collections.js";
-const cloudInfo = createCloudInfoPanel();
+const cloudInfo = createCloudInfoPanel({onCollectionSelect(collection) {
+  byId("search").value = "";
+  byId("status_filter").value = "all";
+  if (!collectionPanel.select(collection.id)) return null;
+  const filter = byId("collection_filter");
+  filter.scrollIntoView({block: "center"});
+  return filter;
+}});
 const byId = id => document.getElementById(id);
 const sortButtons = document.querySelectorAll(".sort-button");
 let sortColumn = "createdAt";
