@@ -22,7 +22,8 @@
 #collection_dialog .collection-section-heading h3{margin:0}
 .collection-section-heading button{font-size:11px;padding:8px}
 .collection-hint{font-size:11px;color:var(--muted);line-height:1.6;margin:0 0 12px}
-.collection-cloud-list{list-style:none;padding:0;margin:0;max-height:230px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.collection-cloud-list{list-style:none;padding:0;margin:0;max-height:230px;overflow:auto;scrollbar-gutter:stable}
+#collection_other_clouds{overscroll-behavior:contain}
 .collection-cloud-list>li{padding:10px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
 .collection-cloud-list>li:last-child{border-bottom:0}
 .collection-member{display:flex;align-items:center;justify-content:space-between;gap:16px}

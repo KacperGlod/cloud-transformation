@@ -60,6 +60,8 @@ Use **Nowa kolekcja** to create an empty collection, then select clouds and choo
 without a collection, or a named collection. **Zarządzaj kolekcją** opens its
 membership editor, name/description/notes fields, and delete action. Search and status filters
 continue to apply within the selected collection.
+Scrolling over short membership and suggestion lists scrolls the editor;
+**Pozostałe chmury** keeps scrolling inside its own list.
 
 Descriptions and notes are optional plain text, available during creation and in
 **Zarządzaj kolekcją**. Use **Zapisz dane kolekcji** to save changes. Descriptions
