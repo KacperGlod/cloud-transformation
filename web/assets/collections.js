@@ -238,11 +238,18 @@ export function createCollections({onFilterChange, onChanged, onError}) {
     });
     panel.addEventListener("cancel", event => { if (panel === dialog ? mutating : creating) event.preventDefault(); });
   }
-  dialog.addEventListener("dblclick", event => {
-    if (event.target !== dialog || mutating) return;
+  function isBackdropEvent(event) {
+    if (event.target !== dialog) return false;
     const bounds = dialog.getBoundingClientRect();
-    if (event.clientX < bounds.left || event.clientX >= bounds.right ||
-      event.clientY < bounds.top || event.clientY >= bounds.bottom) dialog.close();
+    return event.clientX < bounds.left || event.clientX >= bounds.right ||
+      event.clientY < bounds.top || event.clientY >= bounds.bottom;
+  }
+  dialog.addEventListener("mousedown", event => {
+    // Backdrop presses otherwise start text selection inside the modal.
+    if (isBackdropEvent(event)) event.preventDefault();
+  });
+  dialog.addEventListener("dblclick", event => {
+    if (!mutating && isBackdropEvent(event)) dialog.close();
   });
   dialog.addEventListener("close", () => { controller?.abort(); requestVersion++; loading = false; });
 
