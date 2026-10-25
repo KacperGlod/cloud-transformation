@@ -62,6 +62,8 @@ membership editor, name/description/notes fields, and delete action. Search and 
 continue to apply within the selected collection.
 Scrolling over short membership and suggestion lists scrolls the editor;
 **Pozostałe chmury** keeps scrolling inside its own list.
+Double-click the backdrop outside the collection editor to close it, except while
+changes are being saved. A single backdrop click leaves the editor open.
 
 Descriptions and notes are optional plain text, available during creation and in
 **Zarządzaj kolekcją**. Use **Zapisz dane kolekcji** to save changes. Descriptions
