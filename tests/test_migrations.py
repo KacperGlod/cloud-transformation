@@ -10,6 +10,52 @@ from backend.database import Database
 from backend.models import Cloud, CloudCollection, CollectionCloud, ProcessingJob, Project, User, utcnow
 
 
+def insert_legacy_project(session, owner_id, cloud_id, name):
+    identifier = uuid.uuid4()
+    table = Table("projects", MetaData(), autoload_with=session.connection())
+    session.execute(table.insert(), {"id": identifier.hex, "owner_id": owner_id.hex, "cloud_id": cloud_id.hex,
+        "name": name, "scene_state": {"schemaVersion": 1}, "revision": 1, "created_at": utcnow(), "updated_at": utcnow()})
+    return identifier
+
+
+def test_project_visibility_migration_defaults_private_and_preserves_scene(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", clouds_dir=tmp_path / "clouds",
+                        runtime_dir=tmp_path / "runtime", database_url="", start_worker=False)
+    settings.prepare()
+    database = Database(settings)
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "backend" / "migrations"))
+    try:
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "0006")
+        with database.session() as session:
+            user = User(email="project-visibility@example.test", password_hash="unused")
+            session.add(user); session.flush()
+            cloud = Cloud(owner_id=user.id, name="Chmura", status="ready", storage_key="public-project-migration")
+            session.add(cloud); session.flush()
+            identifier = insert_legacy_project(session, user.id, cloud.id, "Istniejący projekt")
+            session.commit()
+        database.migrate()
+        database.migrate()
+        with database.session() as session:
+            project = session.get(Project, identifier)
+            assert project.visibility == "private" and project.revision == 1
+            assert project.name == "Istniejący projekt" and project.scene_state == {"schemaVersion": 1}
+            project.visibility = "public"; session.commit()
+        with database.engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.check(config)
+            command.downgrade(config, "0006")
+            assert "visibility" not in {column["name"] for column in inspect(connection).get_columns("projects")}
+        database.migrate()
+        with database.session() as session:
+            project = session.get(Project, identifier)
+            assert project.visibility == "private" and project.scene_state == {"schemaVersion": 1}
+    finally:
+        database.engine.dispose()
+
+
 def test_soft_delete_migration_preserves_existing_clouds_and_jobs(tmp_path):
     settings = Settings(data_dir=tmp_path / "data", clouds_dir=tmp_path / "clouds",
                         runtime_dir=tmp_path / "runtime", database_url="", start_worker=False)
@@ -170,10 +216,9 @@ def test_collection_migration_is_optional_preserves_projects_and_cascades_member
             cloud = Cloud(owner_id=user.id, name="Istniejąca chmura", status="ready", storage_key="collection-migration")
             session.add(cloud)
             session.flush()
-            project = Project(owner_id=user.id, cloud_id=cloud.id, name="Zapisany widok", scene_state={"schemaVersion": 1})
-            session.add(project)
+            project_id = insert_legacy_project(session, user.id, cloud.id, "Zapisany widok")
             session.commit()
-            owner_id, cloud_id, project_id = user.id, cloud.id, project.id
+            owner_id, cloud_id = user.id, cloud.id
         database.migrate()
         database.migrate()
         with database.session() as session:
@@ -227,10 +272,9 @@ def test_collection_details_migration_preserves_existing_memberships_and_project
             cloud = Cloud(owner_id=user.id, name="Chmura", status="ready", storage_key="details-migration")
             session.add(cloud)
             session.flush()
-            project = Project(owner_id=user.id, cloud_id=cloud.id, name="Widok", scene_state={"schemaVersion": 1})
-            session.add(project)
+            project_id = insert_legacy_project(session, user.id, cloud.id, "Widok")
             session.commit()
-            owner_id, cloud_id, project_id = user.id, cloud.id, project.id
+            owner_id, cloud_id = user.id, cloud.id
         with database.engine.begin() as connection:
             collections = Table("cloud_collections", MetaData(), autoload_with=connection)
             connection.execute(collections.insert(), {"id": collection_id.hex, "owner_id": owner_id.hex,

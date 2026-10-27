@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StringConstraints, field_validator, model_validator
 
-from .schemas import CloudName, Vector
+from .schemas import CloudName, CloudRead, Vector, Visibility
 
 
 MAX_PROJECT_BYTES = 2 * 1024 * 1024
@@ -181,11 +181,17 @@ class ProjectCreate(StateModel):
     name: CloudName
     cloudId: UUID
     sceneState: SceneState
+    visibility: Visibility = "private"
 
 
 class ProjectUpdate(StateModel):
     name: CloudName
     sceneState: SceneState
+    revision: Annotated[int, Field(ge=1)]
+
+
+class ProjectVisibilityUpdate(StateModel):
+    visibility: Visibility
     revision: Annotated[int, Field(ge=1)]
 
 
@@ -196,6 +202,9 @@ class ProjectSummary(BaseModel):
     cloudName: str
     cloudAvailable: bool
     viewerUrl: str
+    cloudUrl: str
+    visibility: Visibility
+    canEdit: bool
     revision: int
     createdAt: datetime
     updatedAt: datetime
@@ -207,3 +216,7 @@ class ProjectRead(ProjectSummary):
 
 class ProjectList(BaseModel):
     projects: list[ProjectSummary]
+
+
+class ProjectCloudRead(CloudRead):
+    infoUrl: str

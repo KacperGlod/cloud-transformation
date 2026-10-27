@@ -1,0 +1,18 @@
+dialog.project-sharing-dialog{box-sizing:border-box;width:min(500px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:24px;border:1px solid #3b4a53;border-radius:12px;background:#181e22;color:#edf2f3;font:14px/1.5 Arial,sans-serif;box-shadow:0 25px 100px #0008}
+.project-sharing-dialog::backdrop{background:#050b10aa;backdrop-filter:blur(4px)}
+.project-sharing-dialog *{box-sizing:border-box}
+.project-sharing-dialog [hidden]{display:none!important}
+.project-sharing-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
+.project-sharing-header h2{font:600 21px/1.3 Arial,sans-serif;margin:0}
+.project-sharing-dialog .project-sharing-close{background:transparent;border:0;padding:0 5px;color:#b8c9d2;font:25px/1 Arial,sans-serif;cursor:pointer}
+.project-sharing-name{margin:0 0 18px;overflow-wrap:anywhere;font-weight:600}
+.project-sharing-dialog label{display:block;font-size:12px;margin:16px 0 8px;color:#c5d1d7}
+.project-sharing-dialog input,.project-sharing-dialog select{display:block;width:100%;margin-top:8px;padding:11px 12px;background:#141b1f;border:1px solid #354149;border-radius:6px;color:#edf2f3;font:13px Arial,sans-serif;min-width:0}
+.project-sharing-note,.project-sharing-status{font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.project-sharing-note{color:#9aaab3}.project-sharing-status{color:#b4ead8;margin-bottom:0}.project-sharing-status:empty{display:none}
+.project-sharing-actions{display:flex;justify-content:flex-end;margin-top:20px}
+.project-sharing-dialog .project-sharing-button,.project-sharing-dialog .project-sharing-save{padding:10px 14px;border:1px solid #354149;border-radius:6px;background:#253239;color:#edf2f3;font:13px Arial,sans-serif;cursor:pointer}
+.project-sharing-dialog .project-sharing-save{background:#94e2c8;color:#10241d;font-weight:600}
+.project-sharing-link>.project-sharing-button{margin-top:10px}
+.project-sharing-dialog button:disabled{opacity:.45;cursor:not-allowed}
+.project-sharing-dialog button:focus-visible,.project-sharing-dialog input:focus-visible,.project-sharing-dialog select:focus-visible{outline:2px solid #94e2c8;outline-offset:3px}

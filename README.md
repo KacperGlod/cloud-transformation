@@ -314,8 +314,11 @@ session cookie for subsequent calls.
 | `DELETE /api/collections/{id}/clouds` | Atomically detach JSON `cloudIds` (1–1000 UUIDs); validates the entire owned batch, ignores repeated IDs and missing memberships, and preserves clouds and files |
 | `DELETE /api/collections/{id}/clouds/{cloudId}` | Idempotently detach one cloud; returns updated collection |
 | `GET /api/collections/{id}/suggestions` | Related candidates with `cloudId`, `relatedCloudId`, `relatedCloudName`, and graph `distance` |
-| `GET /api/projects`, `POST /api/projects` | List the owner's saved viewer projects (optional `cloudId` filter), or create one with `name`, `cloudId`, and `sceneState` |
-| `GET /api/projects/{id}`, `PUT /api/projects/{id}` | Open or update a private project; updates require `name`, `sceneState`, and the current `revision` |
+| `GET /api/projects`, `POST /api/projects` | List the owner's saved viewer projects (optional `cloudId` filter), or create one with `name`, `cloudId`, `sceneState`, and optional `visibility` (default `private`) |
+| `GET /api/projects/{id}`, `PUT /api/projects/{id}` | Read an owned or public project; only the owner can update, using `name`, `sceneState`, and the current `revision` |
+| `PATCH /api/projects/{id}` | Owner changes `visibility` using the current `revision`; updates access without changing the saved scene |
+| `GET /api/projects/{id}/cloud`, `GET /api/projects/{id}/info` | Authorized project cloud descriptor and bounded information; public readers receive redacted metadata |
+| `GET /api/projects/{id}/files/{path}`, `HEAD /api/projects/{id}/files/{path}` | Project-scoped converted Potree metadata/tiles with Range support; rechecks project access on every request |
 | `DELETE /api/projects/{id}` | Delete a saved project while keeping the cloud and its files |
 | `PATCH /api/clouds/{id}` | Owner changes `name` and/or `visibility` |
 | `DELETE /api/clouds/{id}` | Owner permanently removes files and marks the retained cloud record deleted |
@@ -342,6 +345,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 .\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_jobs.py tests/test_projects.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_cloud_info.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_cloud_lineage.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_public_projects.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_collections.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
@@ -561,8 +565,27 @@ Opening replaces the current viewer tools and reuses the existing cloud cache.
 The interface asks before replacing unsaved changes. Save explicitly to persist
 work; changing the camera does not automatically overwrite a project.
 
-Projects belong to their creator and are available only on that account, even
-when their cloud is public. Creating and updating require an owned, ready cloud.
+Projects belong to their creator and default to **Prywatny**, even when their
+cloud is public. Use **Udostępnij** in the library's **Moje projekty** section or
+the viewer's project panel, select **Publiczny**, and choose **Zapisz dostęp**.
+**Kopiuj link** copies the stable project URL; if clipboard access is unavailable,
+the dialog selects the URL for manual copying. Changing access shares the last
+saved scene and preserves any unsaved viewer edits. **Zapisz kopię** creates a
+private project by default.
+
+Anyone with a public project URL can open its saved scene without signing in.
+External viewers can navigate and adjust the local view but cannot overwrite,
+delete, or change access to the owner's project. The viewer labels it **Tylko
+odczyt** and hides owner save/delete controls. Only the owner can save changes.
+Project visibility is independent of cloud visibility: a public project grants
+read access to that cloud's converted Potree metadata/tiles through project-scoped
+URLs, while the cloud itself may remain private. Original/working source files,
+logs, processing parameters, provenance, collections, and other projects are not
+shared. Switching back to **Prywatny** or deleting the project revokes subsequent
+project and tile requests. Public projects are not added to another account's
+project listing.
+
+Creating and updating require an owned, ready cloud.
 Renaming a cloud keeps its project links working. Deleting a cloud retains its
 projects in the library as unavailable; deleting a project removes only its saved
 state. Source and converted point-cloud files are not copied into the project.
@@ -572,13 +595,24 @@ JSON `scene_state`, UTC timestamps, and a positive integer `revision`. It runs
 automatically on startup, or through `python -m backend.migrate`. Back up the
 database before deployment as described above. Existing cloud and account data
 remain in their current tables.
+Migration `0007` adds a constrained `visibility` column with a `private` default;
+existing projects remain private with their IDs, scenes, bindings, and revisions
+preserved. It runs through the same startup migration mechanism.
 
-`POST /api/projects` accepts `name`, UUID `cloudId`, and `sceneState`. The scene
+`POST /api/projects` accepts `name`, UUID `cloudId`, `sceneState`, and optional
+`visibility` (`private` or `public`). The scene
 uses `schemaVersion: 1` and a camera with `position`, `yaw`, `pitch`, and positive
 `radius`; other scene fields have documented defaults in `/docs`. Responses
-include `viewerUrl` and `revision`. `PUT /api/projects/{id}` requires `name`,
+include `viewerUrl`, `cloudUrl`, `visibility`, `canEdit`, and `revision`. `PUT /api/projects/{id}` requires `name`,
 `sceneState`, and the last read `revision`; a stale save returns HTTP 409 and
 leaves the newer state intact. Owner and cloud cannot be reassigned by an update.
+`PATCH /api/projects/{id}` accepts `visibility` and `revision`, increments the
+revision, and preserves the scene. Both saving and changing access reject stale
+revisions. The project-scoped cloud/files/info endpoints authorize either the
+owner or a public project on every request; private cloud URLs retain their usual
+access rules. Public files are limited to the Potree entry and converted tiles,
+with original and working source files excluded. File responses use
+`Cache-Control: private, no-store` and retain HTTP Range/HEAD support.
 
 Scene validation rejects non-finite coordinates, unsupported object types and
 unknown fields, duplicate object IDs, and cyclic or deeper-than-16 annotation

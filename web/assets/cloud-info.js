@@ -189,6 +189,7 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
   const collectionContent = element("div");
   const lineage = createCloudLineage({onInspect(node) {
     identifier = node.id;
+    informationUrl = null;
     name.textContent = node.name;
     selectTab(0, true);
     load();
@@ -237,7 +238,7 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
   body.append(status, content, collectionContent, lineage.container);
   dialog.append(header, tabList, body);
   document.body.append(dialog);
-  let identifier, trigger, triggerIdentifier, controller, requestVersion = 0;
+  let identifier, informationUrl, trigger, triggerIdentifier, controller, requestVersion = 0;
 
   async function load() {
     controller?.abort();
@@ -250,7 +251,7 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
     status.textContent = "Wczytywanie informacji…";
     body.setAttribute("aria-busy", "true");
     try {
-      const info = await api(`/api/clouds/${encodeURIComponent(identifier)}/info`, {signal: controller.signal});
+      const info = await api(informationUrl || `/api/clouds/${encodeURIComponent(identifier)}/info`, {signal: controller.signal});
       if (version !== requestVersion || !dialog.open) return;
       name.textContent = info.cloud.name;
       renderInfo(content, info);
@@ -293,8 +294,9 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
   });
 
   return {
-    open(id, label, source = document.activeElement) {
+    open(id, label, source = document.activeElement, infoUrl = null) {
       identifier = id;
+      informationUrl = infoUrl;
       triggerIdentifier = id;
       trigger = source;
       name.textContent = label;

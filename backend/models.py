@@ -96,6 +96,7 @@ class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (
         CheckConstraint("revision >= 1", name="ck_project_revision"),
+        CheckConstraint("visibility IN ('private', 'public')", name="ck_project_visibility"),
         Index("ix_project_owner_updated", "owner_id", "updated_at"),
     )
 
@@ -103,6 +104,7 @@ class Project(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     cloud_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clouds.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    visibility: Mapped[str] = mapped_column(String(16), default="private", server_default="private", nullable=False)
     scene_state: Mapped[dict] = mapped_column(JSON, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

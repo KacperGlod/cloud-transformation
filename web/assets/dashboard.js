@@ -4,6 +4,7 @@ import {createJobControls} from "./job-controls.js";
 import {createCloudInfoPanel} from "./cloud-info.js";
 import {createCollections} from "./collections.js";
 import {createLibrarySelection} from "./library-selection.js";
+import {createProjectSharing} from "./project-sharing.js";
 const cloudInfo = createCloudInfoPanel({onCollectionSelect(collection) {
   byId("search").value = "";
   byId("status_filter").value = "all";
@@ -28,6 +29,7 @@ let uploading = false;
 let changingPassword = false;
 const collectionPanel = createCollections({onFilterChange: render, onChanged: refresh, onError: error => toast(error.message)});
 const bulkSelection = createLibrarySelection({onChanged: refresh, onMessage: toast});
+const projectSharing = createProjectSharing({onChanged: refresh});
 
 function toast(message) {
   byId("toast").textContent = message;
@@ -269,8 +271,13 @@ function renderProjects() {
   for (const project of projects) {
     const row = element("article", "job saved-project");
     const description = element("div");
-    description.append(element("strong", "", project.name), element("small", "muted", `${project.cloudName} · ${new Date(project.updatedAt).toLocaleString("pl-PL")}`));
+    description.append(element("strong", "", project.name), element("small", "muted", `${project.cloudName} · ${project.visibility === "public" ? "Publiczny" : "Prywatny"} · ${new Date(project.updatedAt).toLocaleString("pl-PL")}`));
     const actions = element("div", "row-actions");
+    const share = element("button", "quiet", "Udostępnij");
+    share.type = "button";
+    share.setAttribute("aria-label", `Udostępnij projekt ${project.name}`);
+    share.addEventListener("click", () => projectSharing.open(project));
+    actions.append(share);
     if (project.cloudAvailable) {
       const open = element("a", "", "Otwórz projekt ↗");
       open.href = project.viewerUrl;

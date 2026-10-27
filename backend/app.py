@@ -28,7 +28,8 @@ from .storage import child_path, download_filename, remove_directory
 from .project_routes import register_project_routes
 from .collection_routes import register_collection_routes
 from .project_schemas import MAX_PROJECT_BYTES
-from .projects import get_project, project_cloud
+from .projects import get_project, project_cloud_json, project_view_cloud
+from .project_schemas import ProjectCloudRead
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -116,7 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             expected = f"{request.url.scheme}://{request.url.netloc}"
             if (origin and origin != expected) or request.headers.get("sec-fetch-site") == "cross-site":
                 return JSONResponse({"error": "Żądanie musi pochodzić z tej aplikacji."}, status_code=403)
-            if request.url.path.startswith("/api/projects") and request.method in ("POST", "PUT"):
+            if request.url.path.startswith("/api/projects") and request.method in ("POST", "PUT", "PATCH"):
                 try:
                     length = int(request.headers.get("content-length", 0))
                 except ValueError:
@@ -449,6 +450,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         user = current_user(request, session, required=False)
         return serve_cloud_file(get_cloud(session, identifier, user), asset_path, user)
 
+    @app.get("/api/projects/{identifier}/cloud", response_model=ProjectCloudRead)
+    def shared_project_cloud(identifier: uuid.UUID, request: Request, session=Depends(get_session)):
+        user = current_user(request, session, required=False)
+        project = get_project(session, identifier, user, write=False)
+        return project_cloud_json(project, project_view_cloud(session, project), user, settings)
+
+    @app.get("/api/projects/{identifier}/info", response_model=CloudInfoRead)
+    def shared_project_information(identifier: uuid.UUID, request: Request, session=Depends(get_session)):
+        user = current_user(request, session, required=False)
+        project = get_project(session, identifier, user, write=False)
+        cloud = project_view_cloud(session, project)
+        info = cloud_info(session, cloud, user, settings)
+        info["cloud"] = project_cloud_json(project, cloud, user, settings)
+        return info
+
+    @app.api_route("/api/projects/{identifier}/files/{asset_path:path}", methods=["GET", "HEAD"])
+    def shared_project_file(identifier: uuid.UUID, asset_path: str, request: Request, session=Depends(get_session)):
+        user = current_user(request, session, required=False)
+        project = get_project(session, identifier, user, write=False)
+        cloud = project_view_cloud(session, project)
+        owns = user is not None and project.owner_id == user.id
+        # Public projects expose only the metadata entry and converted Potree tiles.
+        if not owns and asset_path != cloud.entry_file and Path(asset_path).suffix.lower() not in (".bin", ".hrc", ".las", ".laz"):
+            raise HTTPException(404, "Nie znaleziono pliku.")
+        return serve_cloud_file(cloud, asset_path, user)
+
     @app.api_route("/pointclouds/{identifier}/{asset_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def legacy_file(identifier: str, asset_path: str, request: Request, session=Depends(get_session)):
         user = current_user(request, session, required=False)
@@ -469,9 +496,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def viewer(request: Request, cloud: str | None = None, project: uuid.UUID | None = None, session=Depends(get_session)):
         user = current_user(request, session, required=False)
         if project:
-            user = current_user(request, session)
-            record = get_project(session, project, user)
-            project_cloud(session, record.cloud_id, user)
+            record = get_project(session, project, user, write=False)
+            project_view_cloud(session, record)
         elif cloud:
             get_cloud(session, cloud, user)
         elif not user:
