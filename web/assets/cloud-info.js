@@ -1,4 +1,5 @@
 import {api, element, sizeLabel, statusLabel} from "./common.js";
+import {createCloudLineage, operationLabel} from "./cloud-lineage.js";
 
 const number = value => Number.isFinite(value) ? value.toLocaleString("pl-PL", {
   maximumFractionDigits: 6, ...(value !== 0 && Math.abs(value) < .000001 ? {notation: "scientific"} : {}),
@@ -7,7 +8,6 @@ const vector = value => Array.isArray(value) ? value.map(number).join("; ") : "N
 const date = value => new Date(value).toLocaleString("pl-PL", {dateStyle: "medium", timeStyle: "short"});
 const unit = value => ({metre: "metry (m)", foot: "stopy (ft)", "US survey foot": "stopy US (ftUS)",
   degree: "stopnie (°)", radian: "radiany (rad)", grad: "grady (gon)"}[value] || value || "Nieznane");
-const operations = {import: "Import", segmentation: "Segmentacja", transformation: "Transformacja", "point-removal": "Usuwanie punktów"};
 const attributes = {position: "Pozycja XYZ", rgb: "Kolory RGB", rgba: "Kolory RGBA", intensity: "Intensywność",
   classification: "Klasyfikacja", "return number": "Numer odbicia", "number of returns": "Liczba odbić",
   "gps-time": "Czas GPS", "scan angle": "Kąt skanowania", "scan angle rank": "Kąt skanowania", "point source id": "Identyfikator źródła",
@@ -30,7 +30,7 @@ function field(list, label, value) {
 }
 
 function operationFields(list, operation) {
-  field(list, "Operacja", operations[operation.type] || operation.type || "Import");
+  field(list, "Operacja", operationLabel(operation.type || "import"));
   if (operation.type === "transformation") {
     field(list, "Przesunięcie XYZ", vector(operation.translation));
     field(list, "Obrót XYZ (°)", vector(operation.rotationDegrees));
@@ -187,10 +187,18 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
   status.setAttribute("role", "status");
   const content = element("div");
   const collectionContent = element("div");
+  const lineage = createCloudLineage({onInspect(node) {
+    identifier = node.id;
+    name.textContent = node.name;
+    selectTab(0, true);
+    load();
+  }});
+  let activeTab = 0;
   const tabList = element("div", "cloud-info-tabs");
   tabList.setAttribute("role", "tablist");
   tabList.setAttribute("aria-label", "Szczegóły chmury");
-  const tabs = [["details", "Informacje", content], ["collections", "Kolekcje", collectionContent]].map(([key, label, panel]) => {
+  const tabs = [["details", "Informacje", content], ["collections", "Kolekcje", collectionContent],
+    ["lineage", "Pochodzenie", lineage.container]].map(([key, label, panel]) => {
     const button = element("button", "cloud-info-tab", label);
     button.type = "button";
     button.id = `cloud_info_${key}_tab`;
@@ -204,6 +212,7 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
     return {button, panel};
   });
   function selectTab(index, focus = false) {
+    activeTab = index;
     tabs.forEach(({button, panel}, position) => {
       const selected = position === index;
       button.setAttribute("aria-selected", String(selected));
@@ -212,6 +221,7 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
     });
     body.scrollTop = 0;
     if (focus) tabs[index].button.focus();
+    if (index === 2) lineage.load();
   }
   tabs.forEach(({button}, index) => {
     button.addEventListener("click", () => selectTab(index));
@@ -224,10 +234,10 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
     });
   });
   selectTab(0);
-  body.append(status, content, collectionContent);
+  body.append(status, content, collectionContent, lineage.container);
   dialog.append(header, tabList, body);
   document.body.append(dialog);
-  let identifier, trigger, controller, requestVersion = 0;
+  let identifier, trigger, triggerIdentifier, controller, requestVersion = 0;
 
   async function load() {
     controller?.abort();
@@ -235,6 +245,7 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
     const version = ++requestVersion;
     content.replaceChildren();
     collectionContent.replaceChildren();
+    lineage.reset();
     tabs[1].button.textContent = "Kolekcje";
     status.textContent = "Wczytywanie informacji…";
     body.setAttribute("aria-busy", "true");
@@ -252,6 +263,8 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
         return true;
       } : null);
       if (info.cloud.canEdit && Array.isArray(info.collections)) tabs[1].button.textContent = `Kolekcje (${info.collections.length})`;
+      lineage.setCloud(info.cloud);
+      if (activeTab === 2) lineage.load();
       status.textContent = "";
     } catch (error) {
       if (version !== requestVersion || error.name === "AbortError" || !dialog.open) return;
@@ -272,15 +285,17 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
   for (const type of ["keydown", "keyup"]) dialog.addEventListener(type, event => event.stopPropagation());
   dialog.addEventListener("close", () => {
     controller?.abort();
+    lineage.reset();
     requestVersion++;
     // Polling replaces library rows; restore focus to the replacement name button.
-    const target = trigger?.isConnected ? trigger : document.querySelector(`[data-cloud-info-id="${CSS.escape(identifier)}"]`);
+    const target = trigger?.isConnected ? trigger : document.querySelector(`[data-cloud-info-id="${CSS.escape(triggerIdentifier)}"]`);
     target?.focus({preventScroll: true});
   });
 
   return {
     open(id, label, source = document.activeElement) {
       identifier = id;
+      triggerIdentifier = id;
       trigger = source;
       name.textContent = label;
       body.scrollTop = 0;

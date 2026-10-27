@@ -110,7 +110,7 @@ and declared CRS/units. Owners also see the original file name, immediate source
 cloud (including a retained record of a deleted source), and saved operation
 parameters/results. Public access does not expose private provenance or operation
 parameters. **↻** refreshes the information; Escape or **×** closes the panel.
-The drawer has **Informacje** and **Kolekcje** tabs. **Kolekcje** lists the
+The drawer has **Informacje**, **Kolekcje**, and **Pochodzenie** tabs. **Kolekcje** lists the
 selected cloud's current collection memberships, with a count in the tab and an
 explicit empty state for unassigned clouds. Memberships are visible only to the
 owner, including for public clouds. Refresh preserves the selected tab and reads
@@ -124,6 +124,24 @@ collection falls back to all clouds with an explanatory message.
 The info API returns `collections` as `{id, name}` entries for the owner, an
 empty list for no membership, or `null` for other viewers. Collections are also
 available before point processing finishes. This does not require a new migration.
+
+**Pochodzenie** loads the owner's processing family on demand: original imports,
+ancestors, descendants, and sibling results connected through `parent_id`.
+The tree highlights the inspected cloud and shows each name, operation type,
+creation date, and status. Clicking another cloud's name opens its **Informacje**
+tab in the same drawer; inspecting it does not change the cloud loaded in the
+viewer. **Otwórz** loads a ready cloud, while **Porównaj ze źródłem** is available
+when the result and its immediate owned source both have ready viewer data.
+Deleted sources remain visible as history entries without inspection or open
+actions. A cloud without relatives has an explicit explanation. Refresh preserves
+the selected tab and reloads history; request failures offer a retry.
+
+`GET /api/clouds/{id}/lineage` is owner-only, including for public clouds. It returns
+only lightweight names, parent links, operation labels, dates, statuses, and
+available action URLs; it does not read geometry, original files, or full operation
+payloads. Foreign-owner links are omitted. Cycles terminate safely, and families
+larger than 1,000 nodes return a connected fragment around the selected cloud with
+an explanatory notice. No database migration is required.
 
 `GET /api/clouds/{id}/info` reads bounded LAS/LAZ headers and Potree 1.x/2.x JSON
 metadata on demand, without decoding points or changing the database schema.
@@ -287,6 +305,7 @@ session cookie for subsequent calls.
 | `POST /api/clouds` | Multipart upload: `file`, `name`, optional `visibility` |
 | `GET /api/clouds/{id}` | Cloud metadata (owner or public access) |
 | `GET /api/clouds/{id}/info` | Bounded geometry, CRS, viewer attributes, and owner-only source/operation details |
+| `GET /api/clouds/{id}/lineage` | Owner-only processing family, retained deleted links, operation labels/dates, and open/compare availability; at most 1,000 nodes |
 | `GET /api/clouds/{id}/comparison` | Ready result and its immediate source; requires view access to both |
 | `GET /api/collections`, `POST /api/collections` | List private collections or create one with `name`, optional `cloudIds`, `description`, and `notes` |
 | `GET /api/collections/{id}`, `PATCH /api/collections/{id}` | Read membership and text, or update any subset of `name`, `description`, and `notes`; omitted fields are preserved, empty text clears content, and null is rejected |
@@ -322,10 +341,12 @@ file URLs under `/pointclouds/` also pass through authorization.
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest tests/test_api.py tests/test_jobs.py tests/test_projects.py tests/test_ply.py tests/test_scan_text.py tests/test_migrations.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_cloud_info.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_cloud_lineage.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_collections.py -q
 npm.cmd run test:flight
 npm.cmd run test:library
 npm.cmd run test:comparison
+npm.cmd run test:lineage
 ```
 
 API tests use isolated temporary databases and point clouds. They cover account
@@ -338,6 +359,9 @@ batch validation, source/result suggestions, deleted links and cycles, restart
 persistence, and preservation of files and viewer projects when removing a collection.
 They also check optional description/notes, length validation, partial updates,
 clearing fields, privacy, and migration of existing collections without losing memberships.
+Lineage tests check connected families, private access on public clouds, deleted
+and pending records, action availability, cycle handling, and bounded responses.
+The JavaScript tests cover hierarchy ordering, cycles, and very deep chains.
 `tests/test_jobs.py` also checks real process termination (including silent tools
 with closed stdout), cancellation recovery, owner/origin checks, retained inputs,
 queue ordering, retries, concurrent requests, and cancellation during stage changes.

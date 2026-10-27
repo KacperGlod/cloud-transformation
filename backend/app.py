@@ -17,11 +17,12 @@ from sqlalchemy.exc import IntegrityError
 from .auth import COOKIE_NAME, change_password, current_user, hash_password, start_session, token_hash, user_json, verify_password
 from .config import Settings
 from .cloud_info import cloud_info
+from .cloud_lineage import cloud_lineage
 from .database import Database
 from .formats import MAX_HEADER_BYTES, NORMALIZED_EXTENSIONS, SOURCE_EXTENSIONS, validate_source_header
 from .models import Cloud, LoginSession, ProcessingJob, User, utcnow
 from .jobs import cancel_job, get_job, retry_job
-from .schemas import AccountRead, CloudInfoRead, CloudList, CloudName, CloudRead, CloudUpdate, ComparisonRead, Credentials, JobList, JobRead, PasswordChange, PointRemoval, Segmentation, Transformation, Visibility
+from .schemas import AccountRead, CloudInfoRead, CloudLineageRead, CloudList, CloudName, CloudRead, CloudUpdate, ComparisonRead, Credentials, JobList, JobRead, PasswordChange, PointRemoval, Segmentation, Transformation, Visibility
 from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_deletion, get_cloud, get_comparison, import_legacy, job_json
 from .storage import child_path, download_filename, remove_directory
 from .project_routes import register_project_routes
@@ -226,6 +227,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def cloud_information(identifier: str, request: Request, session=Depends(get_session)):
         user = current_user(request, session, required=False)
         return cloud_info(session, get_cloud(session, identifier, user), user, settings)
+
+    @app.get("/api/clouds/{identifier}/lineage", response_model=CloudLineageRead)
+    def cloud_processing_history(identifier: str, request: Request, session=Depends(get_session)):
+        user = current_user(request, session)
+        return cloud_lineage(session, get_cloud(session, identifier, user, write=True), user)
 
     @app.patch("/api/clouds/{identifier}", response_model=CloudRead)
     def update_cloud(identifier: str, body: CloudUpdate, request: Request, session=Depends(get_session)):

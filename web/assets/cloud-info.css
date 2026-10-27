@@ -43,6 +43,22 @@ dialog.cloud-info-panel::backdrop{background:#050b1080;backdrop-filter:blur(2px)
 .cloud-info-panel a.cloud-info-source{color:#94e2c8;text-decoration:underline;text-underline-offset:3px}
 .cloud-info-notice{padding:12px;border:1px solid #655537;border-radius:6px;background:#332e23;color:#e7ca8d;font-size:12px;margin:20px 0 0}
 .cloud-info-panel .cloud-info-footer{font-size:11px}
+.cloud-info-panel h3.cloud-lineage-heading{margin-top:22px}
+.cloud-lineage-list{list-style:none;margin:18px 0 0;padding:0}
+.cloud-lineage-list>li{position:relative;margin-bottom:12px;min-width:0}
+.cloud-lineage-child::before{content:"";position:absolute;left:-10px;top:24px;width:9px;border-top:1px solid #4a6259}
+.cloud-lineage-node{padding:12px;border:1px solid #35464e;border-radius:7px;background:#1b252a;min-width:0}
+.cloud-lineage-node.is-current{border-color:#94e2c8;background:#1e332c}
+.cloud-lineage-node-header{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.cloud-info-panel .cloud-lineage-name{display:block;padding:0;margin:0;border:0;border-radius:2px;background:transparent;color:#e2e8eb;font:inherit;font-weight:600;line-height:1.5;text-align:left;overflow-wrap:anywhere;max-width:100%}
+.cloud-info-panel button.cloud-lineage-name{cursor:pointer;color:#94e2c8;text-decoration:underline;text-underline-offset:3px}
+.cloud-lineage-current{font-size:10px;padding:3px 6px;background:#304d40;border-radius:4px;color:#b4ead8}
+.cloud-lineage-meta,.cloud-lineage-source{font-size:11px;line-height:1.6;color:#a5b9c4;margin:7px 0 0;overflow-wrap:anywhere}
+.cloud-lineage-actions{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin-top:10px}
+.cloud-lineage-status{font-size:10px;color:#b8c9d2;margin-right:auto}
+.cloud-info-panel a.cloud-lineage-action{font-size:11px;color:#94e2c8;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere;max-width:100%}
+.cloud-info-panel button.cloud-lineage-retry{padding:8px 12px;margin-top:14px;background:#253239;border:1px solid #394850;border-radius:6px;color:#e2e8eb;font:inherit;cursor:pointer}
 #import_panel .cloud-picker{grid-template-columns:minmax(0,1fr) 38px auto}
 #import_panel .actions>.cloud-info-trigger{width:38px;padding:0;font-size:19px}
 @media(max-width:400px){.cloud-info-panel .cloud-info-header{padding:18px}.cloud-info-panel .cloud-info-body{padding:0 18px 20px}.cloud-info-panel h2{font-size:18px}.cloud-info-fields{gap:10px 12px;font-size:12px}}
+@media(max-width:400px){.cloud-info-tabs{gap:14px;padding-inline:18px}}

@@ -109,6 +109,26 @@ class CloudCollectionMembership(BaseModel):
     name: str
 
 
+class CloudLineageNode(BaseModel):
+    id: UUID
+    parentId: UUID | None
+    name: str
+    status: str
+    operationType: str
+    createdAt: datetime
+    canInspect: bool
+    sourceUnavailable: bool
+    viewerUrl: str | None
+    comparisonUrl: str | None
+
+
+class CloudLineageRead(BaseModel):
+    cloudId: UUID
+    nodes: list[CloudLineageNode]
+    truncated: bool
+    notices: list[str]
+
+
 class CloudInfoRead(BaseModel):
     cloud: CloudRead
     sourceFormat: str | None
