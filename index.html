@@ -64,6 +64,9 @@
 		#import_panel[hidden] {
 			display: none;
 		}
+		#import_panel [hidden] { display: none !important; }
+		#import_panel .cloud-picker.guest-view { grid-template-columns: minmax(0, 1fr) 38px; }
+		#viewer_cloud_name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; }
 
 		#import_toggle {
 			position: fixed;
@@ -568,20 +571,21 @@
 	<div id="flight_crosshair" aria-hidden="true" hidden></div>
 
 	<button id="import_toggle" type="button" aria-controls="import_panel" aria-expanded="false">
-		Chmury i przetwarzanie
+		Informacje o widoku
 	</button>
 
-	<aside id="import_panel" aria-label="Import chmury punktów" hidden>
+	<aside id="import_panel" aria-label="Informacje o widoku" hidden>
 		<div class="import-header">
-			<h1>Chmury punktów</h1>
+			<h1 id="viewer_panel_title">Informacje o widoku</h1>
 			<button id="import_close" class="icon-button" type="button" aria-label="Zamknij panel">×</button>
 		</div>
 
-		<div class="section-label">Wczytaj istniejącą</div>
+		<div id="cloud_picker_heading" class="section-label">Aktualna chmura</div>
 		<div class="actions cloud-picker">
-			<select id="cloud_list" aria-label="Dostępne chmury punktów"></select>
+			<span id="viewer_cloud_name"></span>
+			<select id="cloud_list" aria-label="Dostępne chmury punktów" hidden></select>
 			<button id="cloud_info" class="secondary-button cloud-info-trigger" type="button" disabled aria-label="Informacje o aktywnej chmurze" title="Informacje o aktywnej chmurze">ⓘ</button>
-			<button id="cloud_load" class="secondary-button" type="button">Wczytaj</button>
+			<button id="cloud_load" class="secondary-button" type="button" hidden>Wczytaj</button>
 		</div>
 
 		<details id="project_panel" hidden>
@@ -606,9 +610,9 @@
 			<p id="project_status" role="status">Projekt zapisuje się na Twoim koncie.</p>
 		</details>
 
-		<hr class="panel-divider">
+		<hr id="viewer_processing_divider" class="panel-divider" hidden>
 
-		<form id="import_form" class="operation-section">
+		<form id="import_form" class="operation-section" hidden>
 			<button
 				class="operation-section-toggle"
 				type="button"
@@ -645,7 +649,7 @@
 			</div>
 		</form>
 
-		<form id="segment_form" class="operation-section">
+		<form id="segment_form" class="operation-section" hidden>
 			<button
 				class="operation-section-toggle"
 				type="button"
@@ -694,7 +698,7 @@
 			</div>
 		</form>
 
-		<form id="point_removal_form" class="operation-section">
+		<form id="point_removal_form" class="operation-section" hidden>
 			<button
 				class="operation-section-toggle"
 				type="button"
@@ -743,7 +747,7 @@
 			</div>
 		</form>
 
-		<form id="transform_form" class="operation-section">
+		<form id="transform_form" class="operation-section" hidden>
 			<button
 				class="operation-section-toggle"
 				type="button"
@@ -828,7 +832,7 @@
 			id="potree_render_area"
 			style="background-image: url('./build/potree/resources/images/background.jpg');"
 		>
-			<a href="/" id="library_link" style="position:absolute;top:1rem;left:4rem;z-index:1000;padding:.65rem .9rem;border:1px solid #3b4a53;border-radius:7px;background:#182126ed;color:#edf2f3;text-decoration:none;font:13px 'Segoe UI',sans-serif;">← Biblioteka chmur</a>
+			<a href="/login" id="library_link" style="position:absolute;top:1rem;left:4rem;z-index:1000;padding:.65rem .9rem;border:1px solid #3b4a53;border-radius:7px;background:#182126ed;color:#edf2f3;text-decoration:none;font:13px 'Segoe UI',sans-serif;">Zaloguj się</a>
 		</div>
 		<div id="potree_sidebar_container"></div>
 	</div>
@@ -845,6 +849,7 @@
 		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
 		const requestedProjectId = new URLSearchParams(window.location.search).get("project");
 		let sharedProjectCloud = null;
+		let signedIn = false;
 		const LAST_CLOUD_KEY = "cloud-transformation:last-cloud";
 
 		const viewerStatus = document.getElementById("viewer_status");
@@ -947,6 +952,7 @@
 			cloudInfo.open(activeCloud.id, activeCloud.name, cloudInfoButton, activeCloud.infoUrl);
 		});
 		function updateCloudInfoButton() {
+			updateViewerActions();
 			cloudInfoButton.disabled = !activeCloud?.id;
 			const label = activeCloud?.id ? `Informacje o aktywnej chmurze: ${activeCloud.name}` : "Informacje o aktywnej chmurze";
 			cloudInfoButton.title = label;
@@ -1130,6 +1136,26 @@
 			}
 			clipBoxList.disabled = clippingBoxes.length === 0;
 			updateSegmentationControls();
+		}
+
+		function updateViewerActions() {
+			const canProcess = signedIn && Boolean(activeCloud?.canEdit);
+			cloudList.hidden = cloudLoad.hidden = !signedIn;
+			const cloudNameLabel = document.getElementById("viewer_cloud_name");
+			cloudNameLabel.hidden = signedIn;
+			cloudNameLabel.textContent = activeCloud?.name || "Wczytywanie chmury…";
+			cloudList.closest(".cloud-picker").classList.toggle("guest-view", !signedIn);
+			importForm.hidden = !signedIn;
+			for (const form of [segmentForm, pointRemovalForm, transformForm]) form.hidden = !canProcess;
+			document.getElementById("viewer_processing_divider").hidden = !signedIn;
+			document.getElementById("cloud_picker_heading").textContent = signedIn ? "Wczytaj istniejącą" : "Aktualna chmura";
+			document.getElementById("viewer_panel_title").textContent = signedIn ? "Chmury punktów" : "Informacje o widoku";
+			importToggle.textContent = signedIn ? "Chmury i przetwarzanie" : "Informacje o widoku";
+			importPanel.setAttribute("aria-label", signedIn ? "Chmury i przetwarzanie" : "Informacje o widoku");
+			const libraryLink = document.getElementById("library_link");
+			libraryLink.textContent = signedIn ? "← Biblioteka chmur" : "Zaloguj się";
+			libraryLink.href = signedIn ? "/" : "/login";
+			if (!canProcess && pointRemovalPicking) setPointRemovalPicking(false);
 		}
 
 		function updateSegmentationControls() {
@@ -1417,6 +1443,8 @@
 			if (!response.ok && response.status !== 401) {
 				throw new Error("Nie udało się pobrać listy chmur.");
 			}
+			signedIn = response.ok;
+			updateViewerActions();
 
 			const payload = await response.json();
 			availableClouds = (payload.clouds || []).filter(cloud => cloud.status === "ready");

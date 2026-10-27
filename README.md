@@ -577,6 +577,13 @@ Anyone with a public project URL can open its saved scene without signing in.
 External viewers can navigate and adjust the local view but cannot overwrite,
 delete, or change access to the owner's project. The viewer labels it **Tylko
 odczyt** and hides owner save/delete controls. Only the owner can save changes.
+Anonymous viewers of public clouds or projects get **Informacje o widoku** with
+the active cloud name and information button, plus read-only project/link details
+when a project is open. The cloud picker/load button, upload/conversion form, and
+processing forms are hidden, including while account access is being resolved.
+Signed-in users retain cloud selection and import; segmentation, point removal,
+and transformation are shown only for a cloud they own. The navigation link leads
+guests to login and signed-in users to the library.
 Project visibility is independent of cloud visibility: a public project grants
 read access to that cloud's converted Potree metadata/tiles through project-scoped
 URLs, while the cloud itself may remain private. Original/working source files,
