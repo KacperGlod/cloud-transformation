@@ -3,6 +3,7 @@ import {sortClouds} from "./cloud-sorting.js";
 import {createJobControls} from "./job-controls.js";
 import {createCloudInfoPanel} from "./cloud-info.js";
 import {createCollections} from "./collections.js";
+import {createLibrarySelection} from "./library-selection.js";
 const cloudInfo = createCloudInfoPanel({onCollectionSelect(collection) {
   byId("search").value = "";
   byId("status_filter").value = "all";
@@ -18,6 +19,7 @@ let sortDirection = "descending";
 let clouds = [];
 let jobs = [];
 let projects = [];
+let collections = [];
 let selected = null;
 let timer;
 let refreshVersion = 0;
@@ -25,6 +27,7 @@ let toastTimer;
 let uploading = false;
 let changingPassword = false;
 const collectionPanel = createCollections({onFilterChange: render, onChanged: refresh, onError: error => toast(error.message)});
+const bulkSelection = createLibrarySelection({onChanged: refresh, onMessage: toast});
 
 function toast(message) {
   byId("toast").textContent = message;
@@ -132,6 +135,8 @@ function render() {
   byId("cloud_rows").replaceChildren();
   for (const cloud of visible) {
     const row = element("tr");
+    const selectionCell = element("td", "cloud-selection-cell");
+    selectionCell.append(bulkSelection.checkbox(cloud));
     const nameCell = element("td");
     const title = element("div", "cloud-title");
     const icon = element("span", "cloud-icon", "⠿");
@@ -210,9 +215,11 @@ function render() {
     });
     actions.append(edit, remove);
     actionsCell.append(actions);
-    row.append(nameCell, statusCell, visibility, element("td", "muted", sizeLabel(cloud.sizeBytes)), element("td", "muted", date), actionsCell);
+    row.append(selectionCell, nameCell, statusCell, visibility, element("td", "muted", sizeLabel(cloud.sizeBytes)), element("td", "muted", date), actionsCell);
     byId("cloud_rows").append(row);
   }
+  bulkSelection.update({clouds, visible, collections, currentCollection: collectionPanel.currentCollection(),
+    scope: JSON.stringify([query, status, byId("collection_filter").value])});
   byId("empty_state").hidden = visible.length > 0;
   byId("empty_title").textContent = clouds.length ? "Brak pasujących chmur" : "Twoja biblioteka jest gotowa";
   byId("empty_description").textContent = clouds.length ? (collectionPanel.isFiltered() ? "Zmień kolekcję, wyszukiwanie lub status." : "Zmień nazwę wyszukiwania lub wybrany status.") : "Dodaj pierwszy plik LAS, LAZ, PLY, PTS lub PTX, aby rozpocząć pracę.";
@@ -295,7 +302,8 @@ async function refresh() {
     clouds = cloudData.clouds;
     jobs = jobData.jobs;
     projects = projectData.projects;
-    collectionPanel.update(collectionData.collections, clouds);
+    collections = collectionData.collections;
+    collectionPanel.update(collections, clouds);
     render();
     renderProjects();
   } catch (error) {

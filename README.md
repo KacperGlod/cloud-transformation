@@ -66,6 +66,18 @@ Double-click the backdrop outside the collection editor to close it, except whil
 changes are being saved. A single backdrop click leaves the editor open.
 Backdrop clicks do not select text inside the editor.
 
+Use the checkboxes in the library table to select multiple clouds (up to 1,000).
+The header checkbox selects all visible rows. **Dodaj do kolekcji** adds the
+selection to an existing collection or creates a new collection with those clouds.
+Clouds already in the target collection are skipped, with counts shown before
+saving. When a named collection is selected in the filter, **Odłącz od kolekcji**
+detaches the selected clouds from that collection only; files, projects, jobs,
+and other memberships remain intact. Both actions apply each batch atomically.
+Sorting and automatic refresh preserve selection, while changing the search,
+status, or collection filter clears it. Clouds that disappear from the visible
+list are deselected. Failed requests leave the selection and dialog available
+for a retry; **Wyczyść zaznaczenie** clears the current selection.
+
 Descriptions and notes are optional plain text, available during creation and in
 **Zarządzaj kolekcją**. Use **Zapisz dane kolekcji** to save changes. Descriptions
 accept up to 2,000 characters and notes up to 20,000, preserving internal line
@@ -280,6 +292,7 @@ session cookie for subsequent calls.
 | `GET /api/collections/{id}`, `PATCH /api/collections/{id}` | Read membership and text, or update any subset of `name`, `description`, and `notes`; omitted fields are preserved, empty text clears content, and null is rejected |
 | `DELETE /api/collections/{id}` | Delete the collection and its memberships while preserving all clouds |
 | `POST /api/collections/{id}/clouds` | Atomically add `cloudIds` (1–1000 UUIDs per request); repeat adds are idempotent |
+| `DELETE /api/collections/{id}/clouds` | Atomically detach JSON `cloudIds` (1–1000 UUIDs); validates the entire owned batch, ignores repeated IDs and missing memberships, and preserves clouds and files |
 | `DELETE /api/collections/{id}/clouds/{cloudId}` | Idempotently detach one cloud; returns updated collection |
 | `GET /api/collections/{id}/suggestions` | Related candidates with `cloudId`, `relatedCloudId`, `relatedCloudName`, and graph `distance` |
 | `GET /api/projects`, `POST /api/projects` | List the owner's saved viewer projects (optional `cloudId` filter), or create one with `name`, `cloudId`, and `sceneState` |

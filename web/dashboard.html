@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/assets/job-controls.css">
   <link rel="stylesheet" href="/assets/cloud-info.css">
   <link rel="stylesheet" href="/assets/collections.css">
+  <link rel="stylesheet" href="/assets/library-selection.css">
   <script type="module" src="/assets/dashboard.js"></script>
 </head>
 <body>
@@ -32,7 +33,14 @@
         <div class="collection-toolbar-actions"><button id="collection_create" class="secondary" type="button">Nowa kolekcja</button><button id="collection_manage" class="secondary" type="button" disabled>Zarządzaj kolekcją</button></div>
       </div>
       <div class="library-toolbar"><h2 id="library_title">Moje chmury <span id="list_count" class="counter">0</span></h2><div class="filters"><input id="search" type="search" placeholder="Szukaj po nazwie…" aria-label="Szukaj chmury po nazwie"><select id="status_filter" aria-label="Filtruj według statusu"><option value="all">Wszystkie statusy</option><option value="ready">Gotowe</option><option value="active">W przetwarzaniu</option><option value="failed">Błędy</option><option value="cancelled">Anulowane</option></select></div></div>
+      <div id="library_bulk_actions" class="library-bulk-actions" role="group" aria-label="Akcje dla zaznaczonych chmur" hidden>
+        <span id="library_selected_count" role="status">Wybrano chmur: 0</span>
+        <button id="library_bulk_add" class="primary" type="button">Dodaj do kolekcji</button>
+        <button id="library_bulk_remove" class="secondary" type="button" hidden>Odłącz od kolekcji</button>
+        <button id="library_clear_selection" class="quiet" type="button">Wyczyść zaznaczenie</button>
+      </div>
       <div class="table-scroll"><table><thead><tr>
+        <th class="cloud-selection-cell" scope="col"><input id="library_select_all" class="cloud-selection-checkbox" type="checkbox" aria-label="Zaznacz wszystkie widoczne chmury" disabled></th>
         <th class="sortable" scope="col"><button type="button" class="sort-button" data-sort="name"><span class="sort-label">NAZWA CHMURY</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>
         <th class="sortable" scope="col"><button type="button" class="sort-button" data-sort="status"><span class="sort-label">STATUS</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>
         <th class="sortable" scope="col"><button type="button" class="sort-button" data-sort="visibility"><span class="sort-label">DOSTĘP</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>
@@ -60,6 +68,17 @@
       <label>Powtórz nowe hasło<input id="confirm_password" name="confirmPassword" type="password" autocomplete="new-password" minlength="10" maxlength="256" required></label>
       <p id="password_status" class="form-status" role="status"></p>
       <div class="dialog-actions"><button class="close secondary" type="button">Anuluj</button><button id="password_submit" class="primary" type="submit">Zapisz hasło</button></div>
+    </form>
+  </dialog>
+  <dialog id="collection_bulk_dialog" aria-labelledby="collection_bulk_title" aria-describedby="collection_bulk_summary collection_bulk_hint">
+    <form id="collection_bulk_form">
+      <div class="dialog-header"><h2 id="collection_bulk_title">Dodaj chmury do kolekcji</h2><button class="quiet" data-bulk-close type="button" aria-label="Zamknij">×</button></div>
+      <p id="collection_bulk_summary" class="muted"></p>
+      <label id="collection_bulk_target_field">Kolekcja<select id="collection_bulk_target"></select></label>
+      <label id="collection_bulk_name_field" hidden>Nazwa nowej kolekcji<input id="collection_bulk_name" maxlength="120" placeholder="np. Most Kraków"></label>
+      <p id="collection_bulk_hint" class="muted"></p>
+      <p id="collection_bulk_status" class="form-status" role="status"></p>
+      <div class="dialog-actions"><button class="secondary" data-bulk-close type="button">Anuluj</button><button id="collection_bulk_submit" class="primary" type="submit">Dodaj chmury</button></div>
     </form>
   </dialog>
   <dialog id="collection_create_dialog" aria-labelledby="collection_create_title">

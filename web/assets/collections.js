@@ -281,6 +281,7 @@ export function createCollections({onFilterChange, onChanged, onError}) {
       return collections.find(item => item.id === filter.value)?.cloudIds.includes(cloudId) || false;
     },
     isFiltered: () => filter.value !== "all",
+    currentCollection: () => collections.find(item => item.id === filter.value) || null,
     select(identifier) {
       if (!collections.some(item => item.id === identifier)) return false;
       requestedFilter = null;

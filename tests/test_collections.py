@@ -68,6 +68,7 @@ def test_collections_and_suggestions_are_private_and_batches_are_atomic(applicat
     for method, suffix, body in [("GET", "", None), ("GET", "/suggestions", None),
                                  ("PATCH", "", {"name": "Obca"}), ("DELETE", "", None),
                                  ("POST", "/clouds", {"cloudIds": [other_cloud]}),
+                                 ("DELETE", "/clouds", {"cloudIds": [source]}),
                                  ("DELETE", f"/clouds/{source}", None)]:
         assert client.request(method, f"/api/collections/{collection['id']}{suffix}", json=body).status_code == 404
     assert create(client, clouds=[source]).status_code == 404  # Public viewing does not grant ownership.
@@ -84,6 +85,79 @@ def test_collections_and_suggestions_are_private_and_batches_are_atomic(applicat
     assert create(client).status_code == 401
     use_cookies(client, other_cookies)
     assert client.get(f"/api/collections/{own_collection['id']}/suggestions").json() == {"suggestions": []}
+
+
+def test_batch_detach_preserves_clouds_files_projects_and_other_memberships(application):
+    app, client, settings = application
+    owner, cookies = register(client)
+    source, directory = seed_cloud(app, settings, owner)
+    result, _ = seed_cloud(app, settings, owner, parent=uuid.UUID(source))
+    remaining, _ = seed_cloud(app, settings, owner)
+    nonmember, _ = seed_cloud(app, settings, owner)
+    original = (directory / "original.las").read_bytes()
+    collection = create(client, clouds=[source, result, remaining]).json()
+    other = create(client, "Druga kolekcja", [source, result]).json()
+    route = f"/api/collections/{collection['id']}"
+    with app.state.database.session() as session:
+        session.get(Cloud, uuid.UUID(result)).status = "queued"
+        project = Project(owner_id=uuid.UUID(owner["id"]), cloud_id=uuid.UUID(source),
+                          name="Widok", scene_state={"schemaVersion": 1})
+        session.add(project)
+        session.commit()
+        project_id = project.id
+    response = client.request("DELETE", route + "/clouds", json={"cloudIds": [source, result, source, nonmember]})
+    assert response.status_code == 200, response.text
+    assert response.json()["cloudIds"] == [remaining]
+    assert client.request("DELETE", route + "/clouds", json={"cloudIds": [source, result]}).json() == response.json()
+    assert set(client.get(f"/api/collections/{other['id']}").json()["cloudIds"]) == {source, result}
+    assert (directory / "original.las").read_bytes() == original
+    assert len(client.get("/api/clouds").json()["clouds"]) == 4
+    with app.state.database.session() as session:
+        assert session.get(Project, project_id) is not None
+        assert session.get(Cloud, uuid.UUID(source)).status == "ready"
+        assert session.get(Cloud, uuid.UUID(result)).status == "queued"
+    with TestClient(create_app(settings)) as restarted:
+        use_cookies(restarted, cookies)
+        assert restarted.get(route).json()["cloudIds"] == [remaining]
+
+
+def test_batch_detach_validates_all_clouds_before_mutating(application):
+    app, client, settings = application
+    owner, cookies = register(client)
+    source, _ = seed_cloud(app, settings, owner)
+    deleted, _ = seed_cloud(app, settings, owner)
+    deleting, _ = seed_cloud(app, settings, owner)
+    collection = create(client, clouds=[source]).json()
+    route = f"/api/collections/{collection['id']}"
+    with app.state.database.session() as session:
+        session.get(Cloud, uuid.UUID(deleted)).deleted_at = utcnow()
+        session.get(Cloud, uuid.UUID(deleting)).status = "deleting"
+        session.commit()
+    other, _ = register(client, "batch-other@example.test")
+    foreign, _ = seed_cloud(app, settings, other, visibility="public")
+    use_cookies(client, cookies)
+    for invalid in [foreign, deleted, deleting, str(uuid.uuid4())]:
+        response = client.request("DELETE", route + "/clouds", json={"cloudIds": [source, invalid]})
+        assert response.status_code == 404, response.text
+        assert client.get(route).json() == collection
+    assert client.request("DELETE", route + "/clouds", json={"cloudIds": [source]},
+                          headers={"Origin": "https://foreign.test"}).status_code == 403
+    assert client.get(route).json() == collection
+
+
+def test_batch_detach_limits_and_authentication(application):
+    app, client, settings = application
+    owner, _ = register(client)
+    cloud, _ = seed_cloud(app, settings, owner)
+    collection = create(client, clouds=[cloud]).json()
+    route = f"/api/collections/{collection['id']}/clouds"
+    for body in [{"cloudIds": []}, {"cloudIds": ["invalid"]}, {"cloudIds": [cloud] * 1001},
+                 {"cloudIds": [cloud], "owner_id": owner["id"]}]:
+        assert client.request("DELETE", route, json=body).status_code == 422
+    assert client.get(f"/api/collections/{collection['id']}").json() == collection
+    assert client.request("DELETE", route, json={"cloudIds": [cloud] * 1000}).json()["cloudIds"] == []
+    client.cookies.clear()
+    assert client.request("DELETE", route, json={"cloudIds": [cloud]}).status_code == 401
 
 
 def test_suggestions_follow_ancestors_descendants_and_siblings_without_auto_add(application):

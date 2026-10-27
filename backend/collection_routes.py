@@ -5,9 +5,10 @@ from filelock import FileLock
 from sqlalchemy import select
 
 from .auth import current_user
-from .collection_schemas import (CollectionAddClouds, CollectionCreate, CollectionList,
+from .collection_schemas import (CollectionCloudIds, CollectionCreate, CollectionList,
                                  CollectionRead, CollectionSuggestions, CollectionUpdate)
-from .collections import add_collection_clouds, collection_json, collection_members, collection_suggestions, get_collection
+from .collections import (add_collection_clouds, collection_json, collection_members,
+                          collection_suggestions, get_collection, remove_collection_clouds)
 from .models import CloudCollection, CollectionCloud, utcnow
 
 
@@ -59,11 +60,20 @@ def register_collection_routes(app, settings, get_session):
         return Response(status_code=204)
 
     @app.post("/api/collections/{identifier}/clouds", response_model=CollectionRead)
-    def add_clouds(identifier: UUID, body: CollectionAddClouds, request: Request, session=Depends(get_session)):
+    def add_clouds(identifier: UUID, body: CollectionCloudIds, request: Request, session=Depends(get_session)):
         user = current_user(request, session)
         with FileLock(str(settings.data_dir / "cloud-mutations.lock"), timeout=30):
             collection = get_collection(session, identifier, user)
             add_collection_clouds(session, collection, body.cloudIds, user)
+            session.commit()
+            return detail(session, collection, user)
+
+    @app.delete("/api/collections/{identifier}/clouds", response_model=CollectionRead)
+    def remove_clouds(identifier: UUID, body: CollectionCloudIds, request: Request, session=Depends(get_session)):
+        user = current_user(request, session)
+        with FileLock(str(settings.data_dir / "cloud-mutations.lock"), timeout=30):
+            collection = get_collection(session, identifier, user)
+            remove_collection_clouds(session, collection, body.cloudIds, user)
             session.commit()
             return detail(session, collection, user)
 

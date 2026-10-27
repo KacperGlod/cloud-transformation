@@ -36,21 +36,40 @@ def collection_json(collection: CloudCollection, cloud_ids: list[UUID]) -> dict:
             "createdAt": iso_utc(collection.created_at), "updatedAt": iso_utc(collection.updated_at)}
 
 
-def add_collection_clouds(session: Session, collection: CloudCollection, cloud_ids: list[UUID], user: User) -> None:
-    """Validate the entire batch before changing membership; repeated adds are idempotent."""
+def validate_collection_clouds(session: Session, cloud_ids: list[UUID], user: User) -> set[UUID]:
+    """Reject the entire batch if any cloud is missing or belongs to another owner."""
     requested = set(cloud_ids)
     if not requested:
-        return
+        return requested
     allowed = set(session.scalars(select(Cloud.id).where(
         Cloud.id.in_(requested), Cloud.owner_id == user.id, Cloud.deleted_at.is_(None),
         Cloud.status.not_in(("deleting", "deleted")))))
     if requested != allowed:
         raise HTTPException(404, "Nie znaleziono jednej z chmur w Twojej bibliotece.")
+    return requested
+
+
+def add_collection_clouds(session: Session, collection: CloudCollection, cloud_ids: list[UUID], user: User) -> None:
+    """Validate the entire batch before changing membership; repeated adds are idempotent."""
+    requested = validate_collection_clouds(session, cloud_ids, user)
+    if not requested:
+        return
     existing = set(session.scalars(select(CollectionCloud.cloud_id).where(
         CollectionCloud.collection_id == collection.id, CollectionCloud.cloud_id.in_(requested))))
     for identifier in requested - existing:
         session.add(CollectionCloud(collection_id=collection.id, cloud_id=identifier))
     if requested - existing:
+        collection.updated_at = utcnow()
+
+
+def remove_collection_clouds(session: Session, collection: CloudCollection, cloud_ids: list[UUID], user: User) -> None:
+    """Detach an owned batch without changing any clouds, files, or other collections."""
+    requested = validate_collection_clouds(session, cloud_ids, user)
+    memberships = list(session.scalars(select(CollectionCloud).where(
+        CollectionCloud.collection_id == collection.id, CollectionCloud.cloud_id.in_(requested))))
+    for membership in memberships:
+        session.delete(membership)
+    if memberships:
         collection.updated_at = utcnow()
 
 

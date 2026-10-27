@@ -32,7 +32,7 @@ class CollectionUpdate(BaseModel):
         return value
 
 
-class CollectionAddClouds(BaseModel):
+class CollectionCloudIds(BaseModel):
     model_config = ConfigDict(extra="forbid")
     cloudIds: Annotated[list[UUID], Field(min_length=1, max_length=1000)]
 
