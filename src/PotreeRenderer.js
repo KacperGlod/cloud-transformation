@@ -1187,7 +1187,13 @@ export class Renderer {
 
 		if (transparent){
 			gl.enable(gl.BLEND);
-			gl.blendFunc(gl.SRC_ALPHA, params.layerOpacity ? gl.ONE_MINUS_SRC_ALPHA : gl.ONE);
+			if (params.layerOpacity) {
+				// Blend the layer's color without punching holes in an opaque
+				// canvas background and revealing the page underneath it.
+				gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+			} else {
+				gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+			}
 			gl.depthMask(false);
 			if (params.layerOpacity) gl.enable(gl.DEPTH_TEST);
 			else gl.disable(gl.DEPTH_TEST);

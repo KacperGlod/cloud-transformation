@@ -93,6 +93,9 @@ transparent, the viewer uses standard alpha blending instead of EDL/HQ, whose
 alpha channels encode depth/weights. The selected quality returns automatically
 when all visible layers are opaque. Transparency sorts clouds by their bounds,
 without sorting all streamed points; intersecting clouds use approximate blending.
+Layer blending preserves the canvas background's alpha, so transparent clouds
+reveal the scene background and other clouds without exposing the loading image
+underneath the canvas.
 Potree 2 metadata loads propagate failures and are requested once per cloud.
 No database migration is needed. Rebuild Potree after updating these sources.
 
