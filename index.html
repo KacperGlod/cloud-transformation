@@ -2120,6 +2120,7 @@
 				updateSegmentationControls();
 
 				const clouds = await refreshCloudList();
+				if (!signedIn) setPanelOpen(true);
 				const savedUrl = localStorage.getItem(LAST_CLOUD_KEY);
 				const initialCloud = clouds.find(cloud => normalizeCloudUrl(cloud.url) === savedUrl)
 					|| clouds[0];

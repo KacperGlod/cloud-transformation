@@ -581,6 +581,9 @@ Anonymous viewers of public clouds or projects get **Informacje o widoku** with
 the active cloud name and information button, plus read-only project/link details
 when a project is open. The cloud picker/load button, upload/conversion form, and
 processing forms are hidden, including while account access is being resolved.
+The guest information panel opens automatically on entry. **×** closes it and
+**Informacje o widoku** opens it again; finishing the cloud load does not reopen
+a panel the guest has already closed.
 Signed-in users retain cloud selection and import; segmentation, point removal,
 and transformation are shown only for a cloud they own. The navigation link leads
 guests to login and signed-in users to the library.
