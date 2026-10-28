@@ -4,6 +4,9 @@
 .collection-optional{font-size:11px;color:var(--muted)}
 .collection-toolbar-actions{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
 .collection-toolbar-actions button{font-size:11px;min-height:34px}
+.collection-toolbar-actions a,.collection-section-heading a{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;font-size:11px;box-sizing:border-box;min-height:34px;border-radius:7px;padding:8px 12px}
+.collection-toolbar-actions [hidden],.collection-section-heading [hidden]{display:none!important}
+.collection-section-heading{margin-bottom:12px}
 #collection_dialog{width:min(740px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}
 #collection_dialog h3{font-size:14px;font-weight:600;margin:0 0 12px}
 #collection_dialog h4{font-size:12px;margin:0 0 9px;font-weight:600;color:var(--accent)}

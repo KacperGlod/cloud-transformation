@@ -27,6 +27,7 @@ from .services import ACTIVE_STATUSES, cloud_json, create_job, finish_cloud_dele
 from .storage import child_path, download_filename, remove_directory
 from .project_routes import register_project_routes
 from .collection_routes import register_collection_routes
+from .collections import get_collection
 from .project_schemas import MAX_PROJECT_BYTES
 from .projects import get_project, project_cloud_json, project_view_cloud
 from .project_schemas import ProjectCloudRead
@@ -493,11 +494,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return FileResponse(settings.root / "web" / "login.html")
 
     @app.get("/viewer", include_in_schema=False)
-    def viewer(request: Request, cloud: str | None = None, project: uuid.UUID | None = None, session=Depends(get_session)):
+    def viewer(request: Request, cloud: str | None = None, project: uuid.UUID | None = None,
+               collection: uuid.UUID | None = None, session=Depends(get_session)):
         user = current_user(request, session, required=False)
         if project:
             record = get_project(session, project, user, write=False)
             project_view_cloud(session, record)
+        elif collection:
+            owner = current_user(request, session)
+            get_collection(session, collection, owner)
         elif cloud:
             get_cloud(session, cloud, user)
         elif not user:

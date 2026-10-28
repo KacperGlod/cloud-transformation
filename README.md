@@ -66,6 +66,36 @@ Double-click the backdrop outside the collection editor to close it, except whil
 changes are being saved. A single backdrop click leaves the editor open.
 Backdrop clicks do not select text inside the editor.
 
+Select a collection and choose **Otwórz w viewerze**, either in the library's
+collection toolbar or its membership editor. `/viewer?collection={id}` opens an
+owner-only multi-cloud view. In the viewer, **Warstwy kolekcji** also lets the
+owner choose and load another collection. All ready members load into one scene,
+sharing the global point budget. Pending members have disabled visibility controls;
+one failed layer does not prevent the others from loading. **Wczytaj** rereads
+membership and cloud readiness and retries loading, reusing cached geometry.
+
+Each layer has its own visibility checkbox and **Przezroczystość** slider:
+**0%** is fully opaque, **100%** is fully transparent. Changing visibility or
+opacity keeps the camera in place. **Ustaw aktywną** selects the cloud used by
+information, comparison, and processing tools without hiding the other layers.
+**Pokaż widoczne** frames only visible layers, excluding fully transparent layers
+and hidden cached clouds. **Otwórz tylko aktywną** returns to the single-cloud
+viewer and its saved project controls. Unsaved single-cloud projects retain their
+existing confirmation before replacement. Layer settings are local to the current
+collection view and are not stored in single-cloud projects or the collection.
+Automatic framing stops when the user interacts during loading, so a late layer
+does not reposition a camera the user has already moved.
+
+Clouds retain their original coordinates; the collection viewer does not align or
+reproject different coordinate systems. Collection membership does not change
+cloud access or create public collection links. While a visible layer is partially
+transparent, the viewer uses standard alpha blending instead of EDL/HQ, whose
+alpha channels encode depth/weights. The selected quality returns automatically
+when all visible layers are opaque. Transparency sorts clouds by their bounds,
+without sorting all streamed points; intersecting clouds use approximate blending.
+Potree 2 metadata loads propagate failures and are requested once per cloud.
+No database migration is needed. Rebuild Potree after updating these sources.
+
 Use the checkboxes in the library table to select multiple clouds (up to 1,000).
 The header checkbox selects all visible rows. **Dodaj do kolekcji** adds the
 selection to an existing collection or creates a new collection with those clouds.
@@ -347,6 +377,7 @@ file URLs under `/pointclouds/` also pass through authorization.
 .\.venv\Scripts\python.exe -m pytest tests/test_cloud_lineage.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_public_projects.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_collections.py -q
+npm.cmd run test:layers
 npm.cmd run test:flight
 npm.cmd run test:library
 npm.cmd run test:comparison

@@ -31,7 +31,7 @@
         <label for="collection_filter">Kolekcja</label>
         <select id="collection_filter"><option value="all">Wszystkie chmury</option><option value="unassigned">Bez kolekcji</option></select>
         <span class="collection-optional">Opcjonalne grupowanie chmur</span>
-        <div class="collection-toolbar-actions"><button id="collection_create" class="secondary" type="button">Nowa kolekcja</button><button id="collection_manage" class="secondary" type="button" disabled>Zarządzaj kolekcją</button></div>
+        <div class="collection-toolbar-actions"><a id="collection_viewer" class="secondary" hidden>Otwórz w viewerze ↗</a><button id="collection_create" class="secondary" type="button">Nowa kolekcja</button><button id="collection_manage" class="secondary" type="button" disabled>Zarządzaj kolekcją</button></div>
       </div>
       <div class="library-toolbar"><h2 id="library_title">Moje chmury <span id="list_count" class="counter">0</span></h2><div class="filters"><input id="search" type="search" placeholder="Szukaj po nazwie…" aria-label="Szukaj chmury po nazwie"><select id="status_filter" aria-label="Filtruj według statusu"><option value="all">Wszystkie statusy</option><option value="ready">Gotowe</option><option value="active">W przetwarzaniu</option><option value="failed">Błędy</option><option value="cancelled">Anulowane</option></select></div></div>
       <div id="library_bulk_actions" class="library-bulk-actions" role="group" aria-label="Akcje dla zaznaczonych chmur" hidden>
@@ -103,7 +103,7 @@
     </form>
     <p id="collection_status" class="form-status" role="status"></p>
     <div id="collection_content">
-      <section class="collection-section"><h3>W kolekcji <span id="collection_member_count" class="counter">0</span></h3><ul id="collection_members" class="collection-cloud-list"></ul></section>
+      <section class="collection-section"><div class="collection-section-heading"><h3>W kolekcji <span id="collection_member_count" class="counter">0</span></h3><a id="collection_editor_viewer" class="secondary" hidden>Otwórz w viewerze ↗</a></div><ul id="collection_members" class="collection-cloud-list"></ul></section>
       <form id="collection_add_form">
         <div class="collection-section-heading"><h3>Dodaj chmury</h3><button id="collection_select_suggestions" class="quiet" type="button">Zaznacz proponowane</button></div>
         <label class="sr-only" for="collection_search">Szukaj chmur do dodania</label><input id="collection_search" type="search" placeholder="Szukaj chmur do dodania…">

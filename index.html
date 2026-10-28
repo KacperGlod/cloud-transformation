@@ -17,6 +17,7 @@
 	<link rel="stylesheet" href="/assets/project-sharing.css">
 	<link rel="stylesheet" href="/assets/job-controls.css">
 	<link rel="stylesheet" href="/assets/cloud-info.css">
+	<link rel="stylesheet" href="/assets/viewer-layers.css">
 
 	<style>
 		:root {
@@ -588,6 +589,25 @@
 			<button id="cloud_load" class="secondary-button" type="button" hidden>Wczytaj</button>
 		</div>
 
+		<details id="viewer_layers" hidden>
+			<summary>Warstwy kolekcji</summary>
+			<label for="layer_collection" class="layer-collection-label">Kolekcja chmur</label>
+			<div class="layer-collection-picker">
+				<select id="layer_collection"><option value="">Wybierz kolekcję…</option></select>
+				<button id="layer_load" class="secondary-button" type="button" disabled>Wczytaj</button>
+			</div>
+			<div id="layer_content" hidden>
+				<div class="layer-collection-heading"><strong id="layer_current"></strong><a id="layer_library" href="/">Biblioteka ↗</a></div>
+				<p class="helper-text">Chmury są nakładane według zapisanych współrzędnych. Operacje dotyczą aktywnej chmury.</p>
+				<ul id="layer_list" aria-label="Warstwy chmur"></ul>
+				<div class="layer-actions">
+					<button id="layer_fit" class="secondary-button" type="button" disabled>Pokaż widoczne</button>
+					<button id="layer_single" class="secondary-button" type="button" disabled>Otwórz tylko aktywną</button>
+				</div>
+			</div>
+			<p id="layer_status" role="status"></p>
+		</details>
+
 		<details id="project_panel" hidden>
 			<summary>Projekty</summary>
 			<p id="project_access" class="helper-text"></p>
@@ -845,9 +865,12 @@
 		import {api} from "/assets/common.js";
 		import {createJobControls, checkJobCancellation} from "/assets/job-controls.js";
 		import {createCloudInfoPanel} from "/assets/cloud-info.js";
+		import {createViewerLayers} from "/assets/viewer-layers.js";
+		import {createPointcloudCache} from "/assets/pointcloud-cache.js";
 
 		let requestedCloudId = new URLSearchParams(window.location.search).get("cloud");
 		const requestedProjectId = new URLSearchParams(window.location.search).get("project");
+		const requestedCollectionId = requestedProjectId ? null : new URLSearchParams(window.location.search).get("collection");
 		let sharedProjectCloud = null;
 		let signedIn = false;
 		const LAST_CLOUD_KEY = "cloud-transformation:last-cloud";
@@ -928,7 +951,23 @@
 		let previousCameraMode = null;
 		let previousOrbitRadius = null;
 		let flightStarted = false;
-		const loadedPointClouds = new Map();
+		const originalTransforms = new WeakMap();
+		const pointcloudCache = createPointcloudCache({
+			async load(url, name) {
+				await viewer.promiseGuiLoaded();
+				const pointcloud = (await Potree.loadPointCloud(url, name)).pointcloud;
+				pointcloud.name = name;
+				return pointcloud;
+			},
+			prepare(pointcloud) {
+				pointcloud.material.size = 1;
+				pointcloud.material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
+				pointcloud.material.shape = Potree.PointShape.SQUARE;
+				originalTransforms.set(pointcloud, {position: pointcloud.position.clone(), rotation: pointcloud.rotation.clone(), scale: pointcloud.scale.clone()});
+				pointcloud.visible = false;
+				viewer.scene.addPointCloud(pointcloud);
+			},
+		});
 		const pointRemovalMarkerGeometry = new THREE.SphereGeometry(1, 24, 16);
 		const pointRemovalMarkerFill = new THREE.MeshBasicMaterial({
 			color: 0xff3038,
@@ -946,6 +985,8 @@
 		});
 		let activePointCloud = null;
 		let activeCloud = null;
+		let collectionView = false;
+		let sceneLoadVersion = 0;
 		cloudInfoButton.addEventListener("click", () => {
 			if (!activeCloud?.id) return;
 			flightControls.stop();
@@ -959,6 +1000,7 @@
 			cloudInfoButton.setAttribute("aria-label", label);
 		}
 		let availableClouds = [];
+		let libraryClouds = [];
 		let clippingBoxes = [];
 		let segmentationEngineAvailable = true;
 		let transformationEngineAvailable = true;
@@ -969,6 +1011,7 @@
 		window.viewer = viewer;
 		const projectPanel = createProjectPanel({
 			viewer, getCloud: () => activeCloud, getPointcloud: () => activePointCloud,
+			isCollectionView: () => collectionView,
 			async loadCloud(identifier, project) {
 				let cloud = availableClouds.find(cloud => cloud.id === identifier);
 				if (project?.cloudUrl && !project.canEdit) {
@@ -988,6 +1031,54 @@
 			afterRestore() { clearPointRemovalSelections(); refreshClippingBoxes(); updatePivotControls(); },
 			hasPendingSelections: () => pointRemovalSelections.length > 0,
 		});
+		const layerPanel = createViewerLayers({
+			async getClouds() {
+				await refreshCloudList({includeRequested: false});
+				return libraryClouds;
+			},
+			preferredCloudId: requestedCloudId,
+			beforeOpen: () => projectPanel.allowCloudChange(),
+			onOpen(collection) {
+				sceneLoadVersion++;
+				collectionView = true;
+				viewer.layerOpacityEnabled = true;
+				flightControls.stop();
+				setPointRemovalPicking(false);
+				clearPointRemovalSelections();
+				for (const pointcloud of pointcloudCache.values()) pointcloud.visible = false;
+				activeCloud = activePointCloud = null;
+				updateCloudInfoButton();
+				updateSegmentationControls();
+				comparisonLink.update();
+				projectPanel.cloudChanged();
+				window.history.replaceState(null, "", `/viewer?collection=${encodeURIComponent(collection.id)}`);
+				document.title = `${collection.name} · CloudPoint`;
+				hideViewerStatus();
+				setPanelOpen(true);
+			},
+			async loadPointcloud(cloud) {
+				const version = sceneLoadVersion;
+				const pointcloud = await pointcloudCache.get(normalizeCloudUrl(cloud.url), cloud.name);
+				if (version === sceneLoadVersion) {
+					const original = originalTransforms.get(pointcloud);
+					pointcloud.position.copy(original.position);
+					pointcloud.rotation.copy(original.rotation);
+					pointcloud.scale.copy(original.scale);
+					pointcloud.updateMatrixWorld(true);
+				}
+				return pointcloud;
+			},
+			onActive(cloud, pointcloud, collection) {
+				flightControls.stop();
+				setPointRemovalPicking(false);
+				if (activeCloud?.id !== cloud.id) clearPointRemovalSelections();
+				activatePointCloud(cloud, pointcloud);
+				window.history.replaceState(null, "", `/viewer?collection=${encodeURIComponent(collection.id)}&cloud=${encodeURIComponent(cloud.id)}`);
+				document.title = `${collection.name} · CloudPoint`;
+			},
+			onFit: pointclouds => fitPointClouds(pointclouds),
+			onLeave: cloud => loadPointCloud(cloud.url, cloud.name).catch(error => showViewerStatus(error.message, "error")),
+		});
 
 		viewer.setEDLEnabled(true);
 		viewer.setFOV(60);
@@ -997,6 +1088,8 @@
 
 		viewer.loadGUI(() => {
 			viewer.setLanguage("en");
+			const tree = $("#jstree_scene").jstree(true);
+			if (tree) tree.settings.core.force_text = true;
 			$("#menu_tools").next().show();
 			$("#menu_clipping").next().show();
 		});
@@ -1358,11 +1451,27 @@
 
 		function fitActivePointCloud() {
 			if (!activePointCloud) return;
-			// Cached clouds remain in the scene; frame only the currently visible cloud.
+			fitPointClouds([activePointCloud]);
+		}
+
+		function fitPointClouds(pointclouds) {
+			if (!pointclouds.length) return;
+			flightControls.stop();
+			// Frame only the selected layers, excluding hidden cached clouds.
 			const target = new THREE.Object3D();
-			target.boundingBox = viewer.getBoundingBox([activePointCloud]);
+			target.boundingBox = viewer.getBoundingBox(pointclouds);
 			viewer.zoomTo(target, 1);
 			viewer.controls.stop();
+		}
+
+		function activatePointCloud(cloud, pointcloud) {
+			activeCloud = cloud;
+			activePointCloud = pointcloud;
+			requestedCloudId = cloud.id;
+			cloudList.value = cloud.url;
+			updateCloudInfoButton();
+			comparisonLink.update();
+			updateSegmentationControls();
 		}
 
 		async function loadPointCloud(url, name) {
@@ -1371,6 +1480,11 @@
 				cloudList.value = activeCloud?.url || "";
 				return;
 			}
+			const version = ++sceneLoadVersion;
+			layerPanel.leave();
+			collectionView = false;
+			viewer.layerOpacityEnabled = false;
+			for (const pointcloud of pointcloudCache.values()) pointcloud.visible = false;
 			flightControls.stop();
 			const previousUrl = activeCloud?.url ? normalizeCloudUrl(activeCloud.url) : null;
 			if (previousUrl && previousUrl !== normalizedUrl) {
@@ -1386,58 +1500,17 @@
 			}
 			showViewerStatus(`Wczytywanie chmury "${name}"…`);
 
-			if (loadedPointClouds.has(normalizedUrl)) {
-				if (activePointCloud) {
-					activePointCloud.visible = false;
-				}
-				activePointCloud = loadedPointClouds.get(normalizedUrl);
-				activePointCloud.visible = true;
-				activeCloud = cloudDescriptor;
-				updateCloudInfoButton();
-				comparisonLink.update();
-				fitActivePointCloud();
-				localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
-				updateSegmentationControls();
-				hideViewerStatus();
-				await projectPanel.cloudChanged();
-				return;
-			}
-
-			await new Promise((resolve, reject) => {
-				const timeout = window.setTimeout(() => {
-					reject(new Error(`Przekroczono czas wczytywania chmury "${name}".`));
-				}, 45_000);
-
-				Potree.loadPointCloud(normalizedUrl, name, event => {
-					window.clearTimeout(timeout);
-					const pointCloud = event.pointcloud;
-					const material = pointCloud.material;
-
-					material.size = 1;
-					material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
-					material.shape = Potree.PointShape.SQUARE;
-
-					if (activePointCloud) {
-						activePointCloud.visible = false;
-					}
-
-					viewer.scene.addPointCloud(pointCloud);
-					loadedPointClouds.set(normalizedUrl, pointCloud);
-					activePointCloud = pointCloud;
-					activeCloud = cloudDescriptor;
-					updateCloudInfoButton();
-					comparisonLink.update();
-					fitActivePointCloud();
-					localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
-					updateSegmentationControls();
-					hideViewerStatus();
-					resolve();
-				});
-			});
+			const pointcloud = await pointcloudCache.get(normalizedUrl, name);
+			if (version !== sceneLoadVersion) return;
+			pointcloud.visible = true;
+			activatePointCloud(cloudDescriptor, pointcloud);
+			fitActivePointCloud();
+			localStorage.setItem(LAST_CLOUD_KEY, normalizedUrl);
+			hideViewerStatus();
 			await projectPanel.cloudChanged();
 		}
 
-		async function refreshCloudList() {
+		async function refreshCloudList({includeRequested = true} = {}) {
 			const previousUrl = cloudList.value;
 			const response = await fetch("/api/clouds", { cache: "no-store" });
 			if (!response.ok && response.status !== 401) {
@@ -1447,8 +1520,9 @@
 			updateViewerActions();
 
 			const payload = await response.json();
-			availableClouds = (payload.clouds || []).filter(cloud => cloud.status === "ready");
-			if (requestedCloudId && !availableClouds.some(cloud => cloud.id === requestedCloudId)) {
+			libraryClouds = payload.clouds || [];
+			availableClouds = libraryClouds.filter(cloud => cloud.status === "ready");
+			if (includeRequested && requestedCloudId && !availableClouds.some(cloud => cloud.id === requestedCloudId)) {
 				const selectedResponse = sharedProjectCloud?.id === requestedCloudId ? null
 					: await fetch(`/api/clouds/${encodeURIComponent(requestedCloudId)}`, { cache: "no-store" });
 				if (selectedResponse && !selectedResponse.ok) {
@@ -2119,8 +2193,14 @@
 				pointRemovalEngineAvailable = health.pointRemovalAvailable !== false;
 				updateSegmentationControls();
 
-				const clouds = await refreshCloudList();
+				const clouds = await refreshCloudList({includeRequested: !requestedCollectionId});
+				await layerPanel.refresh(signedIn);
 				if (!signedIn) setPanelOpen(true);
+				if (requestedCollectionId) {
+					setPanelOpen(true);
+					await layerPanel.open(requestedCollectionId);
+					return;
+				}
 				const savedUrl = localStorage.getItem(LAST_CLOUD_KEY);
 				const initialCloud = clouds.find(cloud => normalizeCloudUrl(cloud.url) === savedUrl)
 					|| clouds[0];

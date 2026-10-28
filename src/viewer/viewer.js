@@ -1894,6 +1894,12 @@ export class Viewer extends EventDispatcher{
 	}
 
 	getPRenderer(){
+		// EDL and HQ encode depth/weights in alpha. Collection layers need a
+		// regular alpha pass while any visible layer has partial opacity.
+		if (this.layerOpacityEnabled && this.scene.pointclouds.some(pc => pc.visible && pc.material.opacity < 1)) {
+			if (!this.potreeRenderer) this.potreeRenderer = new PotreeRenderer(this);
+			return this.potreeRenderer;
+		}
 		if(this.useHQ){
 			if (!this.hqRenderer) {
 				this.hqRenderer = new HQSplatRenderer(this);

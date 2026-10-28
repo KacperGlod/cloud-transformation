@@ -4,7 +4,7 @@ import {createProjectSharing} from "./project-sharing.js";
 
 const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
 
-export function createProjectPanel({viewer, getCloud, getPointcloud, loadCloud, stopEditing, afterRestore, hasPendingSelections}) {
+export function createProjectPanel({viewer, getCloud, getPointcloud, loadCloud, stopEditing, afterRestore, hasPendingSelections, isCollectionView = () => false}) {
   const byId = id => document.getElementById(id);
   const panel = byId("project_panel");
   const name = byId("project_name");
@@ -31,6 +31,7 @@ export function createProjectPanel({viewer, getCloud, getPointcloud, loadCloud, 
   function snapshot() { return captureProjectScene(viewer, getPointcloud()); }
 
   function hasChanges() {
+    if (isCollectionView()) return false;
     if (!getPointcloud() || !getCloud()?.canEdit || (current && !current.canEdit)) return false;
     if (hasPendingSelections()) return true;
     const scene = viewer.scene;
@@ -45,8 +46,8 @@ export function createProjectPanel({viewer, getCloud, getPointcloud, loadCloud, 
   }
 
   function updateControls() {
-    const editable = getCloud()?.canEdit && (!current || current.canEdit);
-    panel.hidden = !editable && !current;
+    const editable = !isCollectionView() && getCloud()?.canEdit && (!current || current.canEdit);
+    panel.hidden = isCollectionView() || (!editable && !current);
     byId("project_owner_controls").hidden = !editable;
     byId("project_access").textContent = current
       ? `${current.name} · ${current.visibility === "public" ? "Publiczny" : "Prywatny"}${current.canEdit ? "" : " · Tylko odczyt"}` : "";
@@ -103,7 +104,7 @@ export function createProjectPanel({viewer, getCloud, getPointcloud, loadCloud, 
   }
 
   async function save(copy = false) {
-    if (busy || !getCloud()?.canEdit || (current && !current.canEdit)) return;
+    if (busy || isCollectionView() || !getCloud()?.canEdit || (current && !current.canEdit)) return;
     if (!name.value.trim()) { message("Podaj nazwę projektu.", "error"); name.focus(); return; }
     stopEditing();
     const state = snapshot();

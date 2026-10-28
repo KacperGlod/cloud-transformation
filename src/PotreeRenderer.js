@@ -1187,9 +1187,10 @@ export class Renderer {
 
 		if (transparent){
 			gl.enable(gl.BLEND);
-			gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+			gl.blendFunc(gl.SRC_ALPHA, params.layerOpacity ? gl.ONE_MINUS_SRC_ALPHA : gl.ONE);
 			gl.depthMask(false);
-			gl.disable(gl.DEPTH_TEST);
+			if (params.layerOpacity) gl.enable(gl.DEPTH_TEST);
+			else gl.disable(gl.DEPTH_TEST);
 		} else {
 			gl.disable(gl.BLEND);
 			gl.depthMask(true);
@@ -1452,6 +1453,17 @@ export class Renderer {
 		// camera.matrixWorldInverse.invert(camera.matrixWorld);
 
 		const traversalResult = this.traverse(scene);
+		if (params.layerOpacity) {
+			// Draw opaque geometry before translucent layers. Cloud-level depth
+			// sorting approximates compositing without sorting streamed points.
+			const position = camera.getWorldPosition(new THREE.Vector3());
+			const distance = octree => octree.boundingBox.getCenter(new THREE.Vector3())
+				.applyMatrix4(octree.matrixWorld).distanceToSquared(position);
+			traversalResult.octrees.sort((a, b) => {
+				const order = Number(a.material.opacity < 1) - Number(b.material.opacity < 1);
+				return order || (a.material.opacity < 1 ? distance(b) - distance(a) : 0);
+			});
+		}
 
 
 		// RENDER

@@ -22,6 +22,7 @@
     "test:library": "node --test tests/cloud-sorting.test.mjs",
     "test:comparison": "node --test tests/comparison.test.mjs",
     "test:lineage": "node --test tests/cloud-lineage.test.mjs",
+    "test:layers": "node --test tests/pointcloud-cache.test.mjs",
     "dev": "gulp watch",
     "build": "gulp build pack",
     "postinstall": "npm run build"

@@ -1,0 +1,31 @@
+#viewer_layers{margin-top:1rem;padding:1rem;border:1px solid #465565;border-radius:.55rem;background:#17212b}
+#viewer_layers summary{font-weight:650;cursor:pointer}
+#viewer_layers label,#layer_status,.viewer-layer-detail{font-size:12px;line-height:1.5}
+#viewer_layers>.layer-collection-label{display:block;margin:.8rem 0 .4rem;color:#c3ced9}
+.layer-collection-picker{display:flex;gap:8px;align-items:center}
+.layer-collection-picker select{flex:1;min-width:0}
+#viewer_layers button{font-size:11px}
+#viewer_layers .layer-collection-picker button{flex-shrink:0}
+.layer-collection-heading{display:flex;gap:8px;align-items:baseline;justify-content:space-between;margin-top:1rem}
+#layer_current{min-width:0;overflow-wrap:anywhere;font-size:14px}
+#layer_library{flex-shrink:0;color:#a0dfce;font-size:11px}
+#layer_list{list-style:none;padding:0;margin:.7rem 0;display:grid;gap:10px}
+.viewer-layer{border:1px solid #364653;border-radius:6px;padding:10px;min-width:0}
+.viewer-layer.is-active{border-color:#78c8b0;background:#1b302e}
+.viewer-layer-heading{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+#viewer_layers .viewer-layer-name{display:flex;gap:8px;align-items:flex-start;min-width:0;cursor:pointer;color:#eef4f8;font-weight:600}
+.viewer-layer-name span{overflow-wrap:anywhere;min-width:0}
+#viewer_layers input[type=checkbox]{width:16px;height:16px;min-width:16px;padding:0;margin:1px 0 0;accent-color:#9ae4cd}
+#viewer_layers .layer-activate{flex-shrink:0;padding:5px 7px;min-height:28px}
+.viewer-layer-opacity{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 8px;margin-top:10px}
+.viewer-layer-opacity label{color:#bdcbd4}
+.viewer-layer-opacity output{font-size:12px;font-variant-numeric:tabular-nums;min-width:4ch;text-align:right}
+#viewer_layers input[type=range]{grid-column:1/-1;width:100%;min-width:0;box-sizing:border-box;height:22px;padding:0;margin:0;accent-color:#9ae4cd;cursor:pointer}
+.viewer-layer-detail{margin:5px 0 0;color:#bdcbd4;overflow-wrap:anywhere}
+.viewer-layer-detail:empty{display:none}
+#layer_status{margin:.6rem 0 0;overflow-wrap:anywhere;color:#b9d8ee}
+#layer_status[data-kind=error],.viewer-layer-detail[data-kind=error]{color:#ff9ba5}
+#viewer_layers :focus-visible{outline:2px solid #9ae4cd;outline-offset:3px}
+#viewer_layers .helper-text{font-size:11px;line-height:1.5}
+.layer-actions{display:flex;flex-wrap:wrap;gap:8px}
+.layer-actions button{flex:1}

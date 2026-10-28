@@ -12,6 +12,25 @@ def create(client, name="Most Kraków", clouds=None):
     return client.post("/api/collections", json={"name": name, "cloudIds": clouds or []})
 
 
+def test_collection_viewer_is_owner_only_even_with_public_member_cloud(application):
+    app, client, settings = application
+    owner, cookies = register(client)
+    cloud, _ = seed_cloud(app, settings, owner, visibility="public")
+    collection = create(client, clouds=[cloud]).json()
+    url = f"/viewer?collection={collection['id']}"
+    assert client.get(url).status_code == 200
+    assert client.get(f"{url}&cloud={cloud}").status_code == 200
+    assert client.get(f"/viewer?collection={uuid.uuid4()}").status_code == 404
+    assert client.get("/viewer?collection=invalid").status_code == 422
+    register(client, "other-viewer@example.test")
+    assert client.get(url).status_code == 404
+    assert client.get(f"{url}&cloud={cloud}").status_code == 404
+    client.cookies.clear()
+    assert client.get(url).status_code == 401
+    use_cookies(client, cookies)
+    assert client.get(f"/api/collections/{collection['id']}").json()["cloudIds"] == [cloud]
+
+
 def test_optional_many_to_many_membership_and_deleting_collection_preserves_data(application):
     app, client, settings = application
     owner, _ = register(client)

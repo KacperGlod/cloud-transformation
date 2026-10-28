@@ -30,6 +30,14 @@ export function createCollections({onFilterChange, onChanged, onError}) {
     }
     filter.value = [...filter.options].some(option => option.value === previous) ? previous : "all";
     byId("collection_manage").disabled = !collections.some(item => item.id === filter.value);
+    updateViewerLink(byId("collection_viewer"), collections.find(item => item.id === filter.value));
+  }
+
+  function updateViewerLink(link, collection) {
+    const ready = clouds.some(cloud => cloud.status === "ready" && collection?.cloudIds.includes(cloud.id));
+    link.hidden = !ready;
+    if (ready) link.href = `/viewer?collection=${encodeURIComponent(collection.id)}`;
+    else link.removeAttribute("href");
   }
 
   function updateControls() {
@@ -55,6 +63,7 @@ export function createCollections({onFilterChange, onChanged, onError}) {
   function renderLists() {
     if (!current) return;
     const members = new Set(current.cloudIds);
+    updateViewerLink(byId("collection_editor_viewer"), current);
     const focusedId = document.activeElement?.dataset.collectionChoice;
     const known = new Map(clouds.map(cloud => [cloud.id, cloud]));
     for (const id of selected) if (!known.has(id) || members.has(id)) selected.delete(id);
