@@ -5,6 +5,7 @@ import {Renderer} from "../PotreeRenderer.js";
 import {PotreeRenderer} from "./PotreeRenderer.js";
 import {EDLRenderer} from "./EDLRenderer.js";
 import {HQSplatRenderer} from "./HQSplatRenderer.js";
+import {LayerRenderer} from "./LayerRenderer.js";
 import {Scene} from "./Scene.js";
 import {ClippingTool} from "../utils/ClippingTool.js";
 import {TransformationTool} from "../utils/TransformationTool.js";
@@ -1893,12 +1894,10 @@ export class Viewer extends EventDispatcher{
 		}
 	}
 
-	getPRenderer(){
-		// EDL and HQ encode depth/weights in alpha. Collection layers need a
-		// regular alpha pass while any visible layer has partial opacity.
-		if (this.layerOpacityEnabled && this.scene.pointclouds.some(pc => pc.visible && pc.material.opacity < 1)) {
-			if (!this.potreeRenderer) this.potreeRenderer = new PotreeRenderer(this);
-			return this.potreeRenderer;
+	getPRenderer({compositeLayers = true} = {}){
+		if (compositeLayers && this.layerOpacityEnabled) {
+			if (!this.layerRenderer) this.layerRenderer = new LayerRenderer(this);
+			return this.layerRenderer;
 		}
 		if(this.useHQ){
 			if (!this.hqRenderer) {

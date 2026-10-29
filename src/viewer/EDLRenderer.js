@@ -190,13 +190,15 @@ export class EDLRenderer{
 		const viewer = this.viewer;
 		let camera = params.camera ? params.camera : viewer.scene.getActiveCamera();
 		const {width, height} = this.viewer.renderer.getSize(new THREE.Vector2());
+		const isolated = Boolean(params.layerTarget);
 
 
-		viewer.dispatchEvent({type: "render.pass.begin",viewer: viewer});
+		if (!isolated) viewer.dispatchEvent({type: "render.pass.begin",viewer: viewer});
 		
 		this.resize(width, height);
+		if (isolated) this.clearTargets();
 
-		const visiblePointClouds = viewer.scene.pointclouds.filter(pc => pc.visible);
+		const visiblePointClouds = params.pointclouds || viewer.scene.pointclouds.filter(pc => pc.visible);
 
 		if(this.screenshot){
 			let oldBudget = Potree.pointBudget;
@@ -215,7 +217,7 @@ export class EDLRenderer{
 			}
 		});
 
-		if(viewer.background === "skybox"){
+		if(!isolated && viewer.background === "skybox"){
 			viewer.skybox.camera.rotation.copy(viewer.scene.cameraP.rotation);
 			viewer.skybox.camera.fov = viewer.scene.cameraP.fov;
 			viewer.skybox.camera.aspect = viewer.scene.cameraP.aspect;
@@ -225,7 +227,7 @@ export class EDLRenderer{
 
 			viewer.skybox.camera.updateProjectionMatrix();
 			viewer.renderer.render(viewer.skybox.scene, viewer.skybox.camera);
-		} else if (viewer.background === 'gradient') {
+		} else if (!isolated && viewer.background === 'gradient') {
 			viewer.renderer.render(viewer.scene.sceneBG, viewer.scene.cameraBG);
 		} 
 
@@ -256,6 +258,7 @@ export class EDLRenderer{
 					clipSpheres: viewer.scene.volumes.filter(v => (v instanceof SphereVolume)),
 					shadowMaps: [this.shadowMap],
 					transparent: false,
+					pointclouds: params.pointclouds,
 				});
 			}else{
 
@@ -285,15 +288,19 @@ export class EDLRenderer{
 				viewer.pRenderer.render(viewer.scene.scenePointCloud, camera, this.rtEDL, {
 					clipSpheres: viewer.scene.volumes.filter(v => (v instanceof SphereVolume)),
 					transparent: false,
+					pointclouds: params.pointclouds,
 				});
 			}
 
 			
 		}
 
-		viewer.dispatchEvent({type: "render.pass.scene", viewer: viewer, renderTarget: this.rtRegular});
-		viewer.renderer.setRenderTarget(null);
-		viewer.renderer.render(viewer.scene.scene, camera);
+		if (!isolated) {
+			viewer.dispatchEvent({type: "render.pass.scene", viewer: viewer, renderTarget: this.rtRegular});
+			viewer.renderer.setRenderTarget(null);
+			viewer.renderer.render(viewer.scene.scene, camera);
+		}
+		viewer.renderer.setRenderTarget(params.layerTarget || null);
 
 		{ // EDL PASS
 
@@ -314,7 +321,7 @@ export class EDLRenderer{
 
 			uniforms.edlStrength.value = viewer.edlStrength;
 			uniforms.radius.value = viewer.edlRadius;
-			uniforms.opacity.value = viewer.edlOpacity; // HACK
+			uniforms.opacity.value = isolated ? 1 : viewer.edlOpacity;
 			
 			Utils.screenPass.render(viewer.renderer, this.edlMaterial);
 
@@ -324,6 +331,7 @@ export class EDLRenderer{
 
 		}
 
+		if (isolated) return;
 		viewer.dispatchEvent({type: "render.pass.scene", viewer: viewer});
 
 		viewer.renderer.clearDepth();

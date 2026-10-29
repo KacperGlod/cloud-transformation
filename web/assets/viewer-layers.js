@@ -91,6 +91,8 @@ export function createViewerLayers({getClouds, loadPointcloud, beforeOpen, onOpe
       if (!layer.pointcloud) continue;
       layer.pointcloud.visible = false;
       layer.pointcloud.material.opacity = layer.previousOpacity;
+      if (layer.previousOrder === undefined) delete layer.pointcloud.userData.layerOrder;
+      else layer.pointcloud.userData.layerOrder = layer.previousOrder;
     }
     layers = [];
     activeId = null;
@@ -135,6 +137,8 @@ export function createViewerLayers({getClouds, loadPointcloud, beforeOpen, onOpe
           if (version !== generation) return false;
           layer.pointcloud = pointcloud;
           layer.previousOpacity = pointcloud.material.opacity;
+          layer.previousOrder = pointcloud.userData.layerOrder;
+          pointcloud.userData.layerOrder = layers.indexOf(layer);
           apply(layer);
           const visibilityChanged = () => {
             if (layer.applying) return;

@@ -109,12 +109,14 @@ export class HQSplatRenderer{
 		const viewer = this.viewer;
 		const camera = params.camera ? params.camera : viewer.scene.getActiveCamera();
 		const {width, height} = this.viewer.renderer.getSize(new THREE.Vector2());
+		const isolated = Boolean(params.layerTarget);
 
-		viewer.dispatchEvent({type: "render.pass.begin",viewer: viewer});
+		if (!isolated) viewer.dispatchEvent({type: "render.pass.begin",viewer: viewer});
 
 		this.resize(width, height);
+		if (isolated) this.clearTargets();
 
-		const visiblePointClouds = viewer.scene.pointclouds.filter(pc => pc.visible);
+		const visiblePointClouds = params.pointclouds || viewer.scene.pointclouds.filter(pc => pc.visible);
 		const originalMaterials = new Map();
 
 		for(let pointcloud of visiblePointClouds){
@@ -174,6 +176,7 @@ export class HQSplatRenderer{
 			
 			viewer.pRenderer.render(viewer.scene.scenePointCloud, camera, this.rtDepth, {
 				clipSpheres: viewer.scene.volumes.filter(v => (v instanceof SphereVolume)),
+				pointclouds: params.pointclouds,
 			});
 		}
 
@@ -244,6 +247,7 @@ export class HQSplatRenderer{
 			viewer.renderer.setRenderTarget(null);
 			viewer.pRenderer.render(viewer.scene.scenePointCloud, camera, this.rtAttribute, {
 				clipSpheres: viewer.scene.volumes.filter(v => (v instanceof SphereVolume)),
+				pointclouds: params.pointclouds,
 				//material: this.attributeMaterial,
 				blendFunc: [gl.SRC_ALPHA, gl.ONE],
 				//depthTest: false,
@@ -256,7 +260,9 @@ export class HQSplatRenderer{
 		}
 
 		viewer.renderer.setRenderTarget(null);
-		if(viewer.background === "skybox"){
+		if(isolated){
+			viewer.renderer.setRenderTarget(params.layerTarget);
+		}else if(viewer.background === "skybox"){
 			viewer.renderer.setClearColor(0x000000, 0);
 			viewer.renderer.clear();
 			viewer.skybox.camera.rotation.copy(viewer.scene.cameraP.rotation);
@@ -300,6 +306,7 @@ export class HQSplatRenderer{
 			Utils.screenPass.render(viewer.renderer, normalizationMaterial);
 		}
 
+		if (isolated) return;
 		viewer.renderer.render(viewer.scene.scene, camera);
 
 		viewer.dispatchEvent({type: "render.pass.scene", viewer: viewer});

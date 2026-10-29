@@ -1187,16 +1187,9 @@ export class Renderer {
 
 		if (transparent){
 			gl.enable(gl.BLEND);
-			if (params.layerOpacity) {
-				// Blend the layer's color without punching holes in an opaque
-				// canvas background and revealing the page underneath it.
-				gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-			} else {
-				gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-			}
+			gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
 			gl.depthMask(false);
-			if (params.layerOpacity) gl.enable(gl.DEPTH_TEST);
-			else gl.disable(gl.DEPTH_TEST);
+			gl.disable(gl.DEPTH_TEST);
 		} else {
 			gl.disable(gl.BLEND);
 			gl.depthMask(true);
@@ -1310,7 +1303,7 @@ export class Renderer {
 			//uniform vec3 uColor;
 			shader.setUniform3f("uColor", material.color.toArray());
 			//uniform float opacity;
-			shader.setUniform1f("uOpacity", material.opacity);
+			shader.setUniform1f("uOpacity", params.opacity === undefined ? material.opacity : params.opacity);
 
 			shader.setUniform2f("elevationRange", material.elevationRange);
 			shader.setUniform2f("intensityRange", material.intensityRange);
@@ -1458,22 +1451,11 @@ export class Renderer {
 		//camera.updateProjectionMatrix();
 		// camera.matrixWorldInverse.invert(camera.matrixWorld);
 
-		const traversalResult = this.traverse(scene);
-		if (params.layerOpacity) {
-			// Draw opaque geometry before translucent layers. Cloud-level depth
-			// sorting approximates compositing without sorting streamed points.
-			const position = camera.getWorldPosition(new THREE.Vector3());
-			const distance = octree => octree.boundingBox.getCenter(new THREE.Vector3())
-				.applyMatrix4(octree.matrixWorld).distanceToSquared(position);
-			traversalResult.octrees.sort((a, b) => {
-				const order = Number(a.material.opacity < 1) - Number(b.material.opacity < 1);
-				return order || (a.material.opacity < 1 ? distance(b) - distance(a) : 0);
-			});
-		}
+		const octrees = params.pointclouds || this.traverse(scene).octrees;
 
 
 		// RENDER
-		for (const octree of traversalResult.octrees) {
+		for (const octree of octrees) {
 			let nodes = octree.visibleNodes;
 			this.renderOctree(octree, nodes, camera, target, params);
 		}

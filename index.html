@@ -599,6 +599,7 @@
 			<div id="layer_content" hidden>
 				<div class="layer-collection-heading"><strong id="layer_current"></strong><a id="layer_library" href="/">Biblioteka ↗</a></div>
 				<p class="helper-text">Chmury są nakładane według zapisanych współrzędnych. Operacje dotyczą aktywnej chmury.</p>
+				<p class="helper-text">Warstwy wyżej na liście zasłaniają te niżej.</p>
 				<ul id="layer_list" aria-label="Warstwy chmur"></ul>
 				<div class="layer-actions">
 					<button id="layer_fit" class="secondary-button" type="button" disabled>Pokaż widoczne</button>
@@ -1484,6 +1485,8 @@
 			layerPanel.leave();
 			collectionView = false;
 			viewer.layerOpacityEnabled = false;
+			viewer.layerRenderer?.dispose();
+			viewer.layerRenderer = null;
 			for (const pointcloud of pointcloudCache.values()) pointcloud.visible = false;
 			flightControls.stop();
 			const previousUrl = activeCloud?.url ? normalizeCloudUrl(activeCloud.url) : null;

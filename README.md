@@ -88,14 +88,20 @@ does not reposition a camera the user has already moved.
 
 Clouds retain their original coordinates; the collection viewer does not align or
 reproject different coordinate systems. Collection membership does not change
-cloud access or create public collection links. While a visible layer is partially
-transparent, the viewer uses standard alpha blending instead of EDL/HQ, whose
-alpha channels encode depth/weights. The selected quality returns automatically
-when all visible layers are opaque. Transparency sorts clouds by their bounds,
-without sorting all streamed points; intersecting clouds use approximate blending.
-Layer blending preserves the canvas background's alpha, so transparent clouds
-reveal the scene background and other clouds without exposing the loading image
-underneath the canvas.
+cloud access or create public collection links. Each cloud first renders as a
+complete opaque image with its own depth buffer and the selected standard, EDL,
+or HQ quality. The slider then blends that entire image once. Rendering stays
+consistent at **0% → 1%** transparency; overlapping points within a cloud do not
+accumulate opacity or disappear when the slider changes.
+
+Layers follow the list order: the first row appears on top of the rows below it,
+regardless of opacity, active selection, or metadata load order. Depth buffering
+applies within each cloud; separate clouds use this image-layer order rather than
+automatic depth sorting. Layer blending preserves the canvas background's alpha,
+so transparent clouds reveal the scene background and lower clouds without
+exposing the loading image underneath the canvas. One full-size working target is
+reused for all clouds and released when leaving the collection view. Rendering
+cost grows with the number of visible layers; the point budget remains shared.
 Potree 2 metadata loads propagate failures and are requested once per cloud.
 No database migration is needed. Rebuild Potree after updating these sources.
 

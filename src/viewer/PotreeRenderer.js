@@ -44,16 +44,8 @@ export class PotreeRenderer {
 		renderer.clear();
 	}
  
-	render(params){
+	renderBackground(){
 		let {viewer, renderer} = this;
-
-		const camera = params.camera ? params.camera : viewer.scene.getActiveCamera();
-
-		viewer.dispatchEvent({type: "render.pass.begin",viewer: viewer});
-
-		const renderAreaSize = renderer.getSize(new THREE.Vector2());
-		const width = params.viewport ? params.viewport[2] : renderAreaSize.x;
-		const height = params.viewport ? params.viewport[3] : renderAreaSize.y;
 
 		// render skybox
 		if(viewer.background === "skybox"){
@@ -69,16 +61,32 @@ export class PotreeRenderer {
 		}else if(viewer.background === "gradient"){
 			renderer.render(viewer.scene.sceneBG, viewer.scene.cameraBG);
 		}
+	}
+
+	render(params){
+		const {viewer} = this;
+		const camera = params.camera || viewer.scene.getActiveCamera();
+		const isolated = Boolean(params.layerTarget);
+		if (!isolated) {
+			viewer.dispatchEvent({type: "render.pass.begin", viewer});
+			this.renderBackground();
+		}
 		
-		for(let pointcloud of this.viewer.scene.pointclouds){
+		for(let pointcloud of params.pointclouds || viewer.scene.pointclouds){
 			const {material} = pointcloud;
 			material.useEDL = false;
 		}
 		
-		viewer.pRenderer.render(viewer.scene.scenePointCloud, camera, null, {
+		viewer.pRenderer.render(viewer.scene.scenePointCloud, camera, params.layerTarget || null, {
 			clipSpheres: viewer.scene.volumes.filter(v => (v instanceof Potree.SphereVolume)),
-			layerOpacity: viewer.layerOpacityEnabled === true,
+			pointclouds: params.pointclouds,
+			...(isolated ? {transparent: false, opacity: 1} : {}),
 		});
+		if (!isolated) this.renderScene(camera);
+	}
+
+	renderScene(camera){
+		const {viewer, renderer} = this;
 		
 		// render scene
 		renderer.render(viewer.scene.scene, camera);
@@ -101,11 +109,13 @@ export class PotreeRenderer {
 		// renderer.render(viewer.clippingTool.sceneVolume, camera);
 		// renderer.render(viewer.transformationTool.scene, camera);
 		
-		// renderer.setViewport(width - viewer.navigationCube.width, 
-		// 							height - viewer.navigationCube.width, 
-		// 							viewer.navigationCube.width, viewer.navigationCube.width);
-		// renderer.render(viewer.navigationCube, viewer.navigationCube.camera);		
-		// renderer.setViewport(0, 0, width, height);
+		if (viewer.useHQ) {
+			const {width, height} = renderer.getSize(new THREE.Vector2());
+			renderer.setViewport(width - viewer.navigationCube.width, height - viewer.navigationCube.width,
+				viewer.navigationCube.width, viewer.navigationCube.width);
+			renderer.render(viewer.navigationCube, viewer.navigationCube.camera);
+			renderer.setViewport(0, 0, width, height);
+		}
 		
 		viewer.dispatchEvent({type: "render.pass.end",viewer: viewer});
 	}
