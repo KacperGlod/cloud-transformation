@@ -559,6 +559,7 @@ def test_delete_retains_metadata_and_job_history_but_blocks_access(application, 
         assert job.parameters == {"test": True} and job.log == "Konwersja zakończona"
     history = client.get(f"/api/jobs/{job_id}").json()
     assert history["pointCloudUrl"] is None
+    assert history["resultViewerUrl"] is None
     assert client.get("/api/jobs").json()["jobs"] == [history]
     assert client.patch(f"/api/clouds/{identifier}", json={"name": "Przywrócona"}).status_code == 404
     assert client.delete(f"/api/clouds/{identifier}").status_code == 404

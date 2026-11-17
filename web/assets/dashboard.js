@@ -27,6 +27,7 @@ let refreshVersion = 0;
 let toastTimer;
 let uploading = false;
 let changingPassword = false;
+const openingResults = new Set();
 const collectionPanel = createCollections({onFilterChange: render, onChanged: refresh, onError: error => toast(error.message)});
 const bulkSelection = createLibrarySelection({onChanged: refresh, onMessage: toast});
 const projectSharing = createProjectSharing({onChanged: refresh});
@@ -230,6 +231,46 @@ function render() {
   renderJobs();
 }
 
+function jobResultControls(job) {
+  const container = element("span", "job-controls");
+  if (!job.resultViewerUrl) {
+    container.append(element("span", "muted job-result-unavailable", "Wynik niedostępny"));
+    return container;
+  }
+
+  const button = element("button", "secondary job-result-open", "Otwórz wynik ↗");
+  button.type = "button";
+  button.setAttribute("aria-label", `Otwórz wynik: ${job.name}`);
+  button.disabled = openingResults.has(job.id);
+  button.addEventListener("click", async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (openingResults.has(job.id)) return;
+    openingResults.add(job.id);
+    button.disabled = true;
+    try {
+      const current = await api(`/api/jobs/${encodeURIComponent(job.id)}`);
+      if (current.resultViewerUrl) {
+        window.location.assign(current.resultViewerUrl);
+      } else {
+        jobs = jobs.map(item => item.id === current.id ? current : item);
+        renderJobs();
+        toast("Chmura wynikowa jest już niedostępna.");
+      }
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      openingResults.delete(job.id);
+      const currentButton = byId("job_list").querySelector(
+        `details[data-id="${CSS.escape(job.id)}"] .job-result-open`,
+      );
+      if (currentButton) currentButton.disabled = false;
+    }
+  });
+  container.append(button);
+  return container;
+}
+
 function renderJobs() {
   const expanded = new Set([...byId("job_list").querySelectorAll("details[open]")].map(node => node.dataset.id));
   byId("job_list").replaceChildren();
@@ -237,15 +278,20 @@ function renderJobs() {
   const visibleJobs = [...jobs.filter(job => active(job.status)), ...jobs.filter(job => !active(job.status)).slice(0, 8)];
   for (const job of visibleJobs) {
     const row = element("article", "job job-task");
-    const controls = createJobControls({compact: true, onChange: refresh, onError: error => toast(error.message)});
-    controls.update(job);
     const details = element("details", "job-details");
     details.dataset.id = job.id;
     details.open = expanded.has(job.id);
     const summary = element("summary");
     const name = element("strong", "job-name", job.name);
     name.title = job.name;
-    summary.append(name, controls.container);
+    summary.append(name);
+    if (job.status === "completed") {
+      summary.append(jobResultControls(job));
+    } else {
+      const controls = createJobControls({compact: true, onChange: refresh, onError: error => toast(error.message)});
+      controls.update(job);
+      summary.append(controls.container);
+    }
     if (active(job.status)) {
       const progress = element("progress");
       progress.max = 100;

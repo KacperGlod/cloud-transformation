@@ -10,6 +10,7 @@
 .job-task summary progress{flex:0 0 120px;width:120px}
 .job-task .job-controls{flex:0 0 150px;justify-content:flex-end;flex-wrap:nowrap;margin:0}
 .job-task .job-controls button{min-height:30px;padding:5px 10px;font-size:11px;white-space:nowrap}
+.job-result-unavailable{white-space:nowrap}
 @media(max-width:700px){
   .job-task summary{display:grid;grid-template-columns:minmax(0,1fr) 120px;grid-template-areas:"name progress" "actions status";grid-template-rows:24px 30px;gap:8px 12px}
   .job-task summary .job-name{grid-area:name}

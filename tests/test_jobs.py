@@ -12,7 +12,7 @@ from sqlalchemy import select
 from backend.app import create_app
 from backend.models import ProcessingJob
 from backend.worker import JobCancelled, Worker
-from test_api import application, las_bytes, register, seed_cloud, use_cookies
+from test_api import application, las_bytes, register, seed_cloud, seed_completed_job, use_cookies
 
 
 def upload(client, name="Test zadania"):
@@ -23,6 +23,49 @@ def upload(client, name="Test zadania"):
 
 def detail(client, job):
     return client.get(f"/api/jobs/{job['id']}").json()
+
+
+def test_completed_job_result_link_reflects_availability(application):
+    app, client, settings = application
+    owner, owner_cookies = register(client)
+    source, _ = seed_cloud(app, settings, owner)
+    cloud_id, directory = seed_cloud(app, settings, owner, parent=uuid.UUID(source))
+    job_id, _ = seed_completed_job(app, settings, owner, cloud_id)
+    pending = upload(client)
+    assert pending["resultViewerUrl"] is None
+
+    with app.state.database.session() as session:
+        job = session.get(ProcessingJob, uuid.UUID(job_id))
+        job.kind = "transformation"
+        job.source_cloud_id = uuid.UUID(source)
+        session.commit()
+
+    path = f"/api/jobs/{job_id}"
+    viewer_url = f"/viewer?cloud={cloud_id}"
+    assert client.get(path).json()["resultViewerUrl"] == viewer_url
+    assert client.get(viewer_url).status_code == 200
+    assert client.delete(f"/api/clouds/{source}").status_code == 204
+    assert client.get(path).json()["resultViewerUrl"] == viewer_url
+
+    for filename in ("metadata.json", "hierarchy.bin", "octree.bin"):
+        asset = directory / filename
+        data = asset.read_bytes()
+        asset.write_bytes(b"")
+        assert client.get(path).json()["resultViewerUrl"] is None
+        asset.unlink()
+        history = client.get(path).json()
+        assert history["status"] == "completed"
+        assert history["resultViewerUrl"] is None
+        listed = next(job for job in client.get("/api/jobs").json()["jobs"] if job["id"] == job_id)
+        assert listed["resultViewerUrl"] is None
+        asset.write_bytes(data)
+        assert client.get(path).json()["resultViewerUrl"] == viewer_url
+
+    register(client, "other-job-result@example.test")
+    assert client.get(path).status_code == 404
+    assert client.get(viewer_url).status_code == 404
+    use_cookies(client, owner_cookies)
+    assert client.get(path).json()["resultViewerUrl"] == viewer_url
 
 
 def test_queued_cancellation_is_immediate_idempotent_and_survives_restart(application):

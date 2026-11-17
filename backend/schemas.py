@@ -161,6 +161,7 @@ class JobRead(BaseModel):
     canRetry: bool
     retryUnavailableReason: str | None
     pointCloudUrl: str | None
+    resultViewerUrl: str | None
     sourceCloud: str | None
     mode: str | None
     selection: dict | None

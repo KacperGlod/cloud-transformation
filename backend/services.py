@@ -1,5 +1,6 @@
 import uuid
 from pathlib import Path
+from stat import S_ISREG
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -68,6 +69,26 @@ def cloud_json(cloud: Cloud, user: User | None, settings: Settings) -> dict:
     }
 
 
+def result_viewer_url(job: ProcessingJob, cloud: Cloud, settings: Settings) -> str | None:
+    if job.status != "completed" or cloud.status != "ready" or cloud.deleted_at is not None:
+        return None
+    if cloud.entry_file == "metadata.json":
+        files = ("metadata.json", "hierarchy.bin", "octree.bin")
+    elif cloud.entry_file == "cloud.js":
+        files = ("cloud.js",)
+    else:
+        return None
+    try:
+        directory = child_path(settings.clouds_dir, cloud.storage_key)
+        for filename in files:
+            info = child_path(directory, filename).stat()
+            if not S_ISREG(info.st_mode) or info.st_size == 0:
+                return None
+    except (OSError, ValueError):
+        return None
+    return f"/viewer?cloud={cloud.id}"
+
+
 def job_json(job: ProcessingJob, cloud: Cloud, session, settings: Settings) -> dict:
     params = job.parameters or {}
     return {
@@ -76,6 +97,7 @@ def job_json(job: ProcessingJob, cloud: Cloud, session, settings: Settings) -> d
         "status": job.status, "visibility": cloud.visibility,
         "uploadProgress": job.upload_progress, "progress": job.progress,
         "pointCloudUrl": f"/api/clouds/{cloud.id}/files/{cloud.entry_file}" if cloud.status == "ready" else None,
+        "resultViewerUrl": result_viewer_url(job, cloud, settings),
         "sourceCloud": str(job.source_cloud_id) if job.source_cloud_id else None,
         "mode": params.get("mode"), "selection": job.result if job.kind == "segmentation" else None,
         "transformation": params if job.kind == "transformation" else None,

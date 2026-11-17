@@ -379,6 +379,12 @@ created by multipart parsing. Multipart `/api/clouds` is also supported.
 The viewer's existing raw upload and polling endpoints remain compatible. Ready legacy
 file URLs under `/pointclouds/` also pass through authorization.
 
+In **Ostatnie zadania**, **Otwórz wynik** opens the cloud of a completed job
+in the viewer. The jobs API provides `resultViewerUrl` when the completed
+cloud is ready and its entry file and core Potree 2 files are present and non-empty. The
+library rechecks availability before navigating. For removed or unavailable
+results, the job keeps its completion status and displays **Wynik niedostępny**.
+
 ## Verification
 
 ```powershell
