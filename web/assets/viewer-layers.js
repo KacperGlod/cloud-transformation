@@ -4,6 +4,7 @@ export function createViewerLayers({getClouds, loadPointcloud, beforeOpen, onOpe
   const byId = id => document.getElementById(id);
   const panel = byId("viewer_layers"), select = byId("layer_collection");
   const list = byId("layer_list"), status = byId("layer_status");
+  const orderStatus = byId("layer_order_status");
   let collection = null, layers = [], activeId = null, generation = 0, busy = false, autoFit = true;
   const cleanups = [];
   for (const type of ["pointerdown", "wheel", "keydown"]) {
@@ -49,6 +50,39 @@ export function createViewerLayers({getClouds, loadPointcloud, beforeOpen, onOpe
     for (const item of layers) sync(item);
   }
 
+  function syncOrder() {
+    for (const [index, layer] of layers.entries()) {
+      if (layer.pointcloud) layer.pointcloud.userData.layerOrder = index;
+      layer.ui.up.disabled = index === 0;
+      layer.ui.down.disabled = index === layers.length - 1;
+    }
+  }
+
+  function moveLayer(layer, offset) {
+    const index = layers.indexOf(layer);
+    const target = index + offset;
+    if (index < 0 || target < 0 || target >= layers.length) return;
+
+    layers[index] = layers[target];
+    layers[target] = layer;
+    list.insertBefore(layer.ui.row, layers[target + 1]?.ui.row ?? null);
+    syncOrder();
+
+    const {up, down} = layer.ui;
+    const [preferred, fallback] = offset < 0 ? [up, down] : [down, up];
+    (preferred.disabled ? fallback : preferred).focus();
+    orderStatus.textContent = `Warstwa „${layer.cloud.name}”: pozycja ${target + 1} z ${layers.length}.`;
+  }
+
+  function moveButton(layer, offset, symbol, direction) {
+    const button = element("button", "secondary-button layer-move", symbol);
+    button.type = "button";
+    button.title = `Przesuń ${direction}`;
+    button.setAttribute("aria-label", `Przesuń warstwę ${layer.cloud.name} ${direction}`);
+    button.addEventListener("click", () => moveLayer(layer, offset));
+    return button;
+  }
+
   function render() {
     list.replaceChildren();
     for (const layer of layers) {
@@ -63,7 +97,11 @@ export function createViewerLayers({getClouds, loadPointcloud, beforeOpen, onOpe
       const button = element("button", "secondary-button layer-activate");
       button.type = "button";
       button.setAttribute("aria-label", `Aktywna chmura: ${layer.cloud.name}`);
-      heading.append(label, button);
+      const actions = element("div", "viewer-layer-controls");
+      const up = moveButton(layer, -1, "↑", "w górę");
+      const down = moveButton(layer, 1, "↓", "w dół");
+      actions.append(button, up, down);
+      heading.append(label, actions);
       const opacity = element("div", "viewer-layer-opacity");
       const rangeLabel = element("label", "", "Przezroczystość");
       const range = element("input");
@@ -77,12 +115,13 @@ export function createViewerLayers({getClouds, loadPointcloud, beforeOpen, onOpe
       opacity.hidden = button.hidden = layer.cloud.status !== "ready";
       row.append(heading, opacity, detail);
       list.append(row);
-      layer.ui = {row, checkbox, range, output, activate: button, detail};
+      layer.ui = {row, checkbox, range, output, activate: button, detail, up, down};
       checkbox.addEventListener("change", () => { layer.visible = checkbox.checked; apply(layer); });
       range.addEventListener("input", () => { layer.transparency = Number(range.value); apply(layer); });
       button.addEventListener("click", () => activate(layer));
       sync(layer);
     }
+    syncOrder();
   }
 
   function release() {
@@ -96,6 +135,7 @@ export function createViewerLayers({getClouds, loadPointcloud, beforeOpen, onOpe
     }
     layers = [];
     activeId = null;
+    orderStatus.textContent = "";
   }
 
   async function open(identifier) {

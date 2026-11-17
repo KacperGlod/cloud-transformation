@@ -94,8 +94,10 @@ or HQ quality. The slider then blends that entire image once. Rendering stays
 consistent at **0% → 1%** transparency; overlapping points within a cloud do not
 accumulate opacity or disappear when the slider changes.
 
-Layers follow the list order: the first row appears on top of the rows below it,
-regardless of opacity, active selection, or metadata load order. Depth buffering
+Use **↑** and **↓** next to a layer to move it one row up or down. The first row
+appears on top of the rows below it, regardless of opacity, active selection, or
+metadata load order. Changes apply immediately in the current collection view.
+Reopening the collection starts with its default alphabetical order. Depth buffering
 applies within each cloud; separate clouds use this image-layer order rather than
 automatic depth sorting. Layer blending preserves the canvas background's alpha,
 so transparent clouds reveal the scene background and lower clouds without
