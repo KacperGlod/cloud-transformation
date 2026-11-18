@@ -382,8 +382,10 @@ file URLs under `/pointclouds/` also pass through authorization.
 In **Ostatnie zadania**, **Otwórz wynik** opens the cloud of a completed job
 in the viewer. The jobs API provides `resultViewerUrl` when the completed
 cloud is ready and its entry file and core Potree 2 files are present and non-empty. The
-library rechecks availability before navigating. For removed or unavailable
-results, the job keeps its completion status and displays **Wynik niedostępny**.
+library rechecks availability before navigating. If the server still runs an
+older version that omits this field, the dashboard uses the existing job file
+URL and checks the viewer files on click. For removed or unavailable results,
+the job keeps its completion status and displays **Wynik niedostępny**.
 
 ## Verification
 

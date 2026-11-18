@@ -28,6 +28,7 @@ let toastTimer;
 let uploading = false;
 let changingPassword = false;
 const openingResults = new Set();
+const unavailableLegacyResults = new Set();
 const collectionPanel = createCollections({onFilterChange: render, onChanged: refresh, onError: error => toast(error.message)});
 const bulkSelection = createLibrarySelection({onChanged: refresh, onMessage: toast});
 const projectSharing = createProjectSharing({onChanged: refresh});
@@ -231,9 +232,34 @@ function render() {
   renderJobs();
 }
 
+function jobResultUrl(job) {
+  if (job.status !== "completed") return null;
+  if (Object.hasOwn(job, "resultViewerUrl")) return job.resultViewerUrl;
+  // The dashboard can be refreshed while the server still runs older code.
+  if (!job.pointCloudUrl || unavailableLegacyResults.has(job.id)) return null;
+  return `/viewer?cloud=${encodeURIComponent(job.cloudId)}`;
+}
+
+async function legacyResultFilesAvailable(pointCloudUrl) {
+  const entry = new URL(pointCloudUrl, location.origin);
+  const files = [entry];
+  if (entry.pathname.endsWith("/metadata.json")) {
+    files.push(new URL("hierarchy.bin", entry), new URL("octree.bin", entry));
+  }
+  const responses = await Promise.all(files.map(
+    url => fetch(url, {method: "HEAD", cache: "no-store"}),
+  ));
+  if (responses.some(response => [403, 404, 409, 410].includes(response.status)
+    || (response.ok && response.headers.get("content-length") === "0"))) return false;
+  if (responses.some(response => !response.ok)) {
+    throw new Error("Nie udało się sprawdzić plików wyniku. Spróbuj ponownie.");
+  }
+  return true;
+}
+
 function jobResultControls(job) {
   const container = element("span", "job-controls");
-  if (!job.resultViewerUrl) {
+  if (!jobResultUrl(job)) {
     container.append(element("span", "muted job-result-unavailable", "Wynik niedostępny"));
     return container;
   }
@@ -250,9 +276,12 @@ function jobResultControls(job) {
     button.disabled = true;
     try {
       const current = await api(`/api/jobs/${encodeURIComponent(job.id)}`);
-      if (current.resultViewerUrl) {
-        window.location.assign(current.resultViewerUrl);
+      const url = jobResultUrl(current);
+      const legacy = !Object.hasOwn(current, "resultViewerUrl");
+      if (url && (!legacy || await legacyResultFilesAvailable(current.pointCloudUrl))) {
+        window.location.assign(url);
       } else {
+        if (legacy) unavailableLegacyResults.add(job.id);
         jobs = jobs.map(item => item.id === current.id ? current : item);
         renderJobs();
         toast("Chmura wynikowa jest już niedostępna.");
