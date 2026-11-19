@@ -5,6 +5,7 @@ import {createCloudInfoPanel} from "./cloud-info.js";
 import {createCollections} from "./collections.js";
 import {createLibrarySelection} from "./library-selection.js";
 import {createProjectSharing} from "./project-sharing.js";
+import {rememberLibraryView} from "./library-navigation.js";
 const cloudInfo = createCloudInfoPanel({showPublicLink: true, onCollectionSelect(collection) {
   byId("search").value = "";
   byId("status_filter").value = "all";
@@ -14,6 +15,11 @@ const cloudInfo = createCloudInfoPanel({showPublicLink: true, onCollectionSelect
   return filter;
 }});
 const byId = id => document.getElementById(id);
+const initialFilters = new URLSearchParams(window.location.search);
+byId("search").value = initialFilters.get("q") || "";
+const initialStatus = initialFilters.get("status");
+const statusFilter = byId("status_filter");
+statusFilter.value = [...statusFilter.options].some(option => option.value === initialStatus) ? initialStatus : "all";
 const sortButtons = document.querySelectorAll(".sort-button");
 let sortColumn = "createdAt";
 let sortDirection = "descending";
@@ -125,6 +131,17 @@ function renderSortHeaders() {
 
 function render() {
   renderSortHeaders();
+  const libraryUrl = new URL(window.location.href);
+  const queryValue = byId("search").value;
+  const statusValue = byId("status_filter").value;
+  if (queryValue) libraryUrl.searchParams.set("q", queryValue);
+  else libraryUrl.searchParams.delete("q");
+  if (statusValue !== "all") libraryUrl.searchParams.set("status", statusValue);
+  else libraryUrl.searchParams.delete("status");
+  if (libraryUrl.href !== window.location.href) {
+    window.history.replaceState(window.history.state, "", libraryUrl);
+  }
+  rememberLibraryView();
   byId("total_count").textContent = clouds.length;
   byId("ready_count").textContent = clouds.filter(cloud => cloud.status === "ready").length;
   byId("processing_count").textContent = clouds.filter(cloud => active(cloud.status)).length;

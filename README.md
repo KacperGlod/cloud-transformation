@@ -60,6 +60,10 @@ Use **Nowa kolekcja** to create an empty collection, then select clouds and choo
 without a collection, or a named collection. **Zarządzaj kolekcją** opens its
 membership editor, name/description/notes fields, and delete action. Search and status filters
 continue to apply within the selected collection.
+The library URL retains the collection, search text (`q`), and status filter
+(`status`). The viewer's **Biblioteka chmur** link returns to the library view
+from which it was opened, including after refreshing or switching clouds in
+the viewer. Return locations are kept within the current browser tab.
 Scrolling over short membership and suggestion lists scrolls the editor;
 **Pozostałe chmury** keeps scrolling inside its own list.
 Double-click the backdrop outside the collection editor to close it, except while
