@@ -151,6 +151,9 @@ and declared CRS/units. Owners also see the original file name, immediate source
 cloud (including a retained record of a deleted source), and saved operation
 parameters/results. Public access does not expose private provenance or operation
 parameters. **↻** refreshes the information; Escape or **×** closes the panel.
+In the library, a ready public cloud has a **Kopiuj link** button under
+**Podstawowe dane**. It copies the cloud's viewer URL. If clipboard access is
+unavailable, the drawer selects the address for manual copying.
 The drawer has **Informacje**, **Kolekcje**, and **Pochodzenie** tabs. **Kolekcje** lists the
 selected cloud's current collection memberships, with a count in the tab and an
 explicit empty state for unassigned clouds. Memberships are visible only to the

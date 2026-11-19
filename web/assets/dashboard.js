@@ -5,7 +5,7 @@ import {createCloudInfoPanel} from "./cloud-info.js";
 import {createCollections} from "./collections.js";
 import {createLibrarySelection} from "./library-selection.js";
 import {createProjectSharing} from "./project-sharing.js";
-const cloudInfo = createCloudInfoPanel({onCollectionSelect(collection) {
+const cloudInfo = createCloudInfoPanel({showPublicLink: true, onCollectionSelect(collection) {
   byId("search").value = "";
   byId("status_filter").value = "all";
   if (!collectionPanel.select(collection.id)) return null;

@@ -12,6 +12,20 @@ export async function api(url, options = {}) {
 
 export const json = (method, data) => ({method, headers: {"Content-Type": "application/json"}, body: JSON.stringify(data)});
 
+export async function copyLink(input, status) {
+  const url = input.value;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch {
+    if (!input.isConnected || input.value !== url) return;
+    input.focus();
+    input.select();
+    status.textContent = "Zaznaczono link. Skopiuj go skrótem Ctrl+C.";
+    return;
+  }
+  if (input.isConnected && input.value === url) status.textContent = "Link skopiowany.";
+}
+
 export function sizeLabel(value) {
   if (!value) return "—";
   const units = ["B", "KB", "MB", "GB", "TB"];

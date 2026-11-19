@@ -1,4 +1,4 @@
-import {api, element, json} from "./common.js";
+import {api, copyLink, element, json} from "./common.js";
 
 export function createProjectSharing({onChanged = async () => {}} = {}) {
   const dialog = element("dialog", "project-sharing-dialog");
@@ -45,15 +45,7 @@ export function createProjectSharing({onChanged = async () => {}} = {}) {
   close.addEventListener("click", () => { if (!busy) dialog.close(); });
   dialog.addEventListener("cancel", event => { if (busy) event.preventDefault(); });
   for (const type of ["keydown", "keyup"]) dialog.addEventListener(type, event => event.stopPropagation());
-  copy.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(link.value);
-      status.textContent = "Link skopiowany.";
-    } catch {
-      link.focus(); link.select();
-      status.textContent = "Zaznaczono link. Skopiuj go skrótem Ctrl+C.";
-    }
-  });
+  copy.addEventListener("click", () => copyLink(link, status));
   form.addEventListener("submit", async event => {
     event.preventDefault();
     if (busy || !current.canEdit || save.disabled) return;

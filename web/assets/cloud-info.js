@@ -1,4 +1,4 @@
-import {api, element, sizeLabel, statusLabel} from "./common.js";
+import {api, copyLink, element, sizeLabel, statusLabel} from "./common.js";
 import {createCloudLineage, operationLabel} from "./cloud-lineage.js";
 
 const number = value => Number.isFinite(value) ? value.toLocaleString("pl-PL", {
@@ -57,7 +57,27 @@ function operationFields(list, operation) {
   }
 }
 
-function renderInfo(container, info) {
+function renderShareLink(container, viewerUrl) {
+  const group = element("div", "cloud-info-share");
+  const label = element("label", "", "Link do chmury");
+  const input = element("input");
+  input.type = "url";
+  input.id = "cloud_info_share_url";
+  input.readOnly = true;
+  input.value = new URL(viewerUrl, window.location.origin).href;
+  label.htmlFor = input.id;
+  const copy = element("button", "cloud-info-copy", "Kopiuj link");
+  copy.type = "button";
+  const status = element("p", "cloud-info-share-status");
+  status.setAttribute("role", "status");
+  copy.addEventListener("click", () => copyLink(input, status));
+  const controls = element("div", "cloud-info-share-controls");
+  controls.append(input, copy);
+  group.append(label, controls, status);
+  container.append(group);
+}
+
+function renderInfo(container, info, showPublicLink) {
   const {cloud} = info;
   const basics = section(container, "Podstawowe dane");
   field(basics.list, "Nazwa", cloud.name);
@@ -69,6 +89,9 @@ function renderInfo(container, info) {
   field(basics.list, "Dodano", date(cloud.createdAt));
   field(basics.list, "Zaktualizowano", date(cloud.updatedAt));
   if (cloud.sourceFile) field(basics.list, "Plik źródłowy", cloud.sourceFile);
+  if (showPublicLink && cloud.visibility === "public" && cloud.status === "ready" && cloud.url && cloud.viewerUrl) {
+    renderShareLink(basics.node, cloud.viewerUrl);
+  }
 
   const geometry = section(container, "Geometria");
   field(geometry.list, "Liczba punktów", number(info.pointCount));
@@ -162,7 +185,7 @@ function renderCollections(container, info, onSelect) {
   }
 }
 
-export function createCloudInfoPanel({onCollectionSelect} = {}) {
+export function createCloudInfoPanel({onCollectionSelect, showPublicLink = false} = {}) {
   const dialog = element("dialog", "cloud-info-panel");
   dialog.setAttribute("aria-labelledby", "cloud_info_heading");
   const header = element("header", "cloud-info-header");
@@ -254,7 +277,7 @@ export function createCloudInfoPanel({onCollectionSelect} = {}) {
       const info = await api(informationUrl || `/api/clouds/${encodeURIComponent(identifier)}/info`, {signal: controller.signal});
       if (version !== requestVersion || !dialog.open) return;
       name.textContent = info.cloud.name;
-      renderInfo(content, info);
+      renderInfo(content, info, showPublicLink);
       renderCollections(collectionContent, info, onCollectionSelect ? collection => {
         // Local navigation returns its focus target; otherwise the regular library link is used.
         const focusTarget = onCollectionSelect(collection);
