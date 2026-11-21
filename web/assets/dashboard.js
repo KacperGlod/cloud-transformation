@@ -16,6 +16,12 @@ const cloudInfo = createCloudInfoPanel({showPublicLink: true, onCollectionSelect
 }});
 const byId = id => document.getElementById(id);
 const initialFilters = new URLSearchParams(window.location.search);
+let returnHighlight = initialFilters.get("highlight") ? {cloudId: initialFilters.get("highlight"), startedAt: null} : null;
+if (initialFilters.has("highlight")) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("highlight");
+  window.history.replaceState(window.history.state, "", url);
+}
 byId("search").value = initialFilters.get("q") || "";
 const initialStatus = initialFilters.get("status");
 const statusFilter = byId("status_filter");
@@ -129,6 +135,27 @@ function renderSortHeaders() {
   }
 }
 
+function highlightReturnedCloud(row) {
+  if (!returnHighlight) return;
+  if (!row) {
+    returnHighlight = null;
+    return;
+  }
+  if (returnHighlight.startedAt === null) {
+    returnHighlight.startedAt = performance.now();
+    row.scrollIntoView({block: "nearest", inline: "nearest"});
+    setTimeout(() => {
+      returnHighlight = null;
+      const highlighted = byId("cloud_rows").querySelector(".cloud-return-highlight");
+      highlighted?.classList.remove("cloud-return-highlight");
+      highlighted?.style.removeProperty("animation-delay");
+    }, 6000);
+  }
+  // Polling rebuilds the rows; continue the fade instead of restarting it.
+  row.style.animationDelay = `-${performance.now() - returnHighlight.startedAt}ms`;
+  row.classList.add("cloud-return-highlight");
+}
+
 function render() {
   renderSortHeaders();
   const libraryUrl = new URL(window.location.href);
@@ -154,8 +181,11 @@ function render() {
   const visible = sortClouds(matching, sortColumn, sortDirection);
   byId("list_count").textContent = visible.length;
   byId("cloud_rows").replaceChildren();
+  let returnedRow = null;
   for (const cloud of visible) {
     const row = element("tr");
+    row.dataset.cloudId = cloud.id;
+    if (cloud.id === returnHighlight?.cloudId) returnedRow = row;
     const selectionCell = element("td", "cloud-selection-cell");
     selectionCell.append(bulkSelection.checkbox(cloud));
     const nameCell = element("td");
@@ -247,6 +277,7 @@ function render() {
   byId("empty_upload").hidden = clouds.length > 0;
   byId("load_status").textContent = `${clouds.length} chmur w bibliotece · Statusy aktualizują się automatycznie`;
   renderJobs();
+  highlightReturnedCloud(returnedRow);
 }
 
 function jobResultUrl(job) {

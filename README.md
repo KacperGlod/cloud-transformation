@@ -63,7 +63,12 @@ continue to apply within the selected collection.
 The library URL retains the collection, search text (`q`), and status filter
 (`status`). The viewer's **Biblioteka chmur** link returns to the library view
 from which it was opened, including after refreshing or switching clouds in
-the viewer. Return locations are kept within the current browser tab.
+the viewer. Return locations are kept within the current browser tab. On return,
+the last active cloud's visible row is brought into view and highlighted for
+three seconds, then fades smoothly over three more seconds. Refreshing the table
+does not restart the effect; reloading the library does not repeat it. Hidden or
+unavailable clouds leave the existing filters unchanged. Reduced-motion users
+receive a static highlight for the same duration.
 Scrolling over short membership and suggestion lists scrolls the editor;
 **Pozostałe chmury** keeps scrolling inside its own list.
 Double-click the backdrop outside the collection editor to close it, except while

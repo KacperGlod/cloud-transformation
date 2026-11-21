@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {libraryViewPath, rememberLibraryView, previousLibraryView} from "../web/assets/library-navigation.js";
+import {libraryViewPath, rememberLibraryView, previousLibraryView, libraryReturnUrl} from "../web/assets/library-navigation.js";
 
 const origin = "http://localhost:1234";
 const key = "cloud-transformation:library-return";
@@ -46,6 +46,24 @@ test("return paths reject other origins and application pages", () => {
     "/viewer?cloud=first", "/login", "/api/clouds", "/clouds/../viewer", "http://["]) {
     assert.equal(libraryViewPath(address, origin), null, address);
   }
+});
+
+test("return links highlight the current cloud without changing the saved filters", () => {
+  const path = "/?collection=first&q=pomiar&status=ready";
+  const link = libraryReturnUrl(path, "current-cloud", origin);
+  assert.equal(link, `${path}&highlight=current-cloud`);
+  assert.equal(libraryViewPath(link, origin), path);
+  assert.equal(libraryReturnUrl(link, "another-cloud", origin), `${path}&highlight=another-cloud`);
+  assert.equal(libraryReturnUrl(path, null, origin), path);
+});
+
+test("highlight return links keep cloud IDs encoded and reject external return locations", () => {
+  const link = libraryReturnUrl("https://example.com/", "cloud & name#1", origin);
+  const url = new URL(link, origin);
+  assert.equal(url.origin, origin);
+  assert.equal(url.pathname, "/");
+  assert.equal(url.searchParams.get("highlight"), "cloud & name#1");
+  assert.equal(url.hash, "");
 });
 
 test("the referring library wins over stale saved state and persists for further navigation", t => {

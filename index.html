@@ -865,7 +865,7 @@
 		import {getFlightOrbitRadius, resumeAfterFlight} from "/assets/flight-navigation.js";
 		import {createProjectPanel} from "/assets/viewer-projects.js";
 		import {api} from "/assets/common.js";
-		import {previousLibraryView} from "/assets/library-navigation.js";
+		import {previousLibraryView, libraryReturnUrl} from "/assets/library-navigation.js";
 		import {createJobControls, checkJobCancellation} from "/assets/job-controls.js";
 		import {createCloudInfoPanel} from "/assets/cloud-info.js";
 		import {createViewerLayers} from "/assets/viewer-layers.js";
@@ -1251,7 +1251,7 @@
 			importPanel.setAttribute("aria-label", signedIn ? "Chmury i przetwarzanie" : "Informacje o widoku");
 			const libraryLink = document.getElementById("library_link");
 			libraryLink.textContent = signedIn ? "← Biblioteka chmur" : "Zaloguj się";
-			libraryLink.href = signedIn ? libraryReturnPath : "/login";
+			libraryLink.href = signedIn ? libraryReturnUrl(libraryReturnPath, activeCloud?.id) : "/login";
 			if (!canProcess && pointRemovalPicking) setPointRemovalPicking(false);
 		}
 

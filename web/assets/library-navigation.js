@@ -44,3 +44,9 @@ export function previousLibraryView() {
     return "/";
   }
 }
+
+export function libraryReturnUrl(address, cloudId, origin = window.location.origin) {
+  const url = new URL(libraryViewPath(address, origin) || "/", origin);
+  if (cloudId) url.searchParams.set("highlight", cloudId);
+  return url.pathname + url.search;
+}
