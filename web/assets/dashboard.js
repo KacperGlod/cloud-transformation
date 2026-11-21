@@ -5,7 +5,7 @@ import {createCloudInfoPanel} from "./cloud-info.js";
 import {createCollections} from "./collections.js";
 import {createLibrarySelection} from "./library-selection.js";
 import {createProjectSharing} from "./project-sharing.js";
-import {rememberLibraryView} from "./library-navigation.js";
+import {rememberLibraryView, returningViewerCloud} from "./library-navigation.js";
 const cloudInfo = createCloudInfoPanel({showPublicLink: true, onCollectionSelect(collection) {
   byId("search").value = "";
   byId("status_filter").value = "all";
@@ -16,7 +16,9 @@ const cloudInfo = createCloudInfoPanel({showPublicLink: true, onCollectionSelect
 }});
 const byId = id => document.getElementById(id);
 const initialFilters = new URLSearchParams(window.location.search);
-let returnHighlight = initialFilters.get("highlight") ? {cloudId: initialFilters.get("highlight"), startedAt: null} : null;
+const returnCloudId = initialFilters.get("highlight") || returningViewerCloud(document.referrer,
+  performance.getEntriesByType("navigation")[0]?.type, window.location.origin);
+let returnHighlight = returnCloudId ? {cloudId: returnCloudId, startedAt: null} : null;
 if (initialFilters.has("highlight")) {
   const url = new URL(window.location.href);
   url.searchParams.delete("highlight");

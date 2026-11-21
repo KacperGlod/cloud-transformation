@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {libraryViewPath, rememberLibraryView, previousLibraryView, libraryReturnUrl} from "../web/assets/library-navigation.js";
+import {libraryViewPath, rememberLibraryView, previousLibraryView, libraryReturnUrl, returningViewerCloud} from "../web/assets/library-navigation.js";
 
 const origin = "http://localhost:1234";
 const key = "cloud-transformation:library-return";
@@ -64,6 +64,21 @@ test("highlight return links keep cloud IDs encoded and reject external return l
   assert.equal(url.pathname, "/");
   assert.equal(url.searchParams.get("highlight"), "cloud & name#1");
   assert.equal(url.hash, "");
+});
+
+test("a return without an explicit highlight identifies the cloud from a local viewer", () => {
+  assert.equal(returningViewerCloud(`${origin}/viewer?cloud=first`, "navigate", origin), "first");
+  assert.equal(returningViewerCloud(`${origin}/viewer?collection=selected&cloud=last-active`, "navigate", origin), "last-active");
+});
+
+test("viewer referrers do not repeat highlights on reload or infer clouds from other pages", () => {
+  for (const type of ["reload", "back_forward", undefined]) {
+    assert.equal(returningViewerCloud(`${origin}/viewer?cloud=first`, type, origin), null);
+  }
+  for (const address of ["", "http://[", "https://example.com/viewer?cloud=first", `${origin}/?cloud=first`,
+    `${origin}/viewer?collection=first`, `${origin}/viewer?cloud=`]) {
+    assert.equal(returningViewerCloud(address, "navigate", origin), null, address);
+  }
 });
 
 test("the referring library wins over stale saved state and persists for further navigation", t => {

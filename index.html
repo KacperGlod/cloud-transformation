@@ -1251,7 +1251,7 @@
 			importPanel.setAttribute("aria-label", signedIn ? "Chmury i przetwarzanie" : "Informacje o widoku");
 			const libraryLink = document.getElementById("library_link");
 			libraryLink.textContent = signedIn ? "← Biblioteka chmur" : "Zaloguj się";
-			libraryLink.href = signedIn ? libraryReturnUrl(libraryReturnPath, activeCloud?.id) : "/login";
+			libraryLink.href = signedIn ? libraryReturnUrl(libraryReturnPath, activeCloud?.id || requestedCloudId) : "/login";
 			if (!canProcess && pointRemovalPicking) setPointRemovalPicking(false);
 		}
 

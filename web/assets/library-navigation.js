@@ -50,3 +50,16 @@ export function libraryReturnUrl(address, cloudId, origin = window.location.orig
   if (cloudId) url.searchParams.set("highlight", cloudId);
   return url.pathname + url.search;
 }
+
+export function returningViewerCloud(referrer, navigationType, origin) {
+  if (!referrer || navigationType !== "navigate") return null;
+  try {
+    const url = new URL(referrer, origin);
+    if (url.origin === origin && url.pathname === "/viewer") {
+      return url.searchParams.get("cloud") || null;
+    }
+  } catch {
+    // An invalid referrer cannot identify a returning cloud.
+  }
+  return null;
+}

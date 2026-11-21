@@ -69,6 +69,9 @@ three seconds, then fades smoothly over three more seconds. Refreshing the table
 does not restart the effect; reloading the library does not repeat it. Hidden or
 unavailable clouds leave the existing filters unchanged. Reduced-motion users
 receive a static highlight for the same duration.
+The return link identifies the requested cloud even while it is loading. If the
+link omits `highlight`, the library can identify the cloud from a same-origin
+viewer referrer, including when returning to a selected collection.
 Scrolling over short membership and suggestion lists scrolls the editor;
 **Pozostałe chmury** keeps scrolling inside its own list.
 Double-click the backdrop outside the collection editor to close it, except while
